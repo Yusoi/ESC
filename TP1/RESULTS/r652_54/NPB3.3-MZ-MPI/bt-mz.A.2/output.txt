@@ -1,0 +1,3 @@
+--------------------------------------------------------------------------
+mpirun noticed that process rank 0 with PID 20493 on node compute-652-1 exited on signal 11 (Segmentation fault).
+--------------------------------------------------------------------------

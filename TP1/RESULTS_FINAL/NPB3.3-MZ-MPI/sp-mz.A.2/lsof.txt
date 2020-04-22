@@ -1,0 +1,182 @@
+COMMAND     PID   USER   FD   TYPE DEVICE  SIZE/OFF     NODE NAME
+bash      21174 a77230  cwd    DIR   0,21      4096  9737154 /home/a77230 (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+bash      21174 a77230  rtd    DIR    8,1      4096        2 /
+bash      21174 a77230  txt    REG    8,1    938736   524432 /bin/bash
+bash      21174 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+bash      21174 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+bash      21174 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+bash      21174 a77230  mem    REG    8,1    138280   262263 /lib64/libtinfo.so.5.7
+bash      21174 a77230  mem    REG    8,1     65928   262179 /lib64/libnss_files-2.12.so
+bash      21174 a77230    0r  FIFO    0,8       0t0 78553490 pipe
+bash      21174 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+bash      21174 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+bash      21174 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+717050.se 21238 a77230  cwd    DIR   0,21      4096  9737912 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+717050.se 21238 a77230  rtd    DIR    8,1      4096        2 /
+717050.se 21238 a77230  txt    REG    8,1    938736   524432 /bin/bash
+717050.se 21238 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+717050.se 21238 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+717050.se 21238 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+717050.se 21238 a77230  mem    REG    8,1    138280   262263 /lib64/libtinfo.so.5.7
+717050.se 21238 a77230    0r  FIFO    0,8       0t0 78553490 pipe
+717050.se 21238 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+717050.se 21238 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+717050.se 21238 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+717050.se 21238 a77230  255r   REG    8,2      2010   128785 /var/spool/torque/mom_priv/jobs/717050.search6.di.uminho.pt.SC
+717050.se 39642 a77230  cwd    DIR   0,21      4096  9737912 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+717050.se 39642 a77230  rtd    DIR    8,1      4096        2 /
+717050.se 39642 a77230  txt    REG    8,1    938736   524432 /bin/bash
+717050.se 39642 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+717050.se 39642 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+717050.se 39642 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+717050.se 39642 a77230  mem    REG    8,1    138280   262263 /lib64/libtinfo.so.5.7
+717050.se 39642 a77230    0r   CHR    1,3       0t0     3925 /dev/null
+717050.se 39642 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+717050.se 39642 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+717050.se 39642 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+make      39645 a77230  cwd    DIR   0,21      4096  9737912 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+make      39645 a77230  rtd    DIR    8,1      4096        2 /
+make      39645 a77230  txt    REG    8,1    173208   789735 /usr/bin/make
+make      39645 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+make      39645 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+make      39645 a77230    0r  FIFO    0,8       0t0 78553490 pipe
+make      39645 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+make      39645 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+make      39645 a77230    3r  FIFO    0,8       0t0 78558950 pipe
+make      39645 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+sh        39646 a77230  cwd    DIR   0,21      4096  9738041 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI/SP-MZ (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+sh        39646 a77230  rtd    DIR    8,1      4096        2 /
+sh        39646 a77230  txt    REG    8,1    938736   524432 /bin/bash
+sh        39646 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+sh        39646 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+sh        39646 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+sh        39646 a77230  mem    REG    8,1    138280   262263 /lib64/libtinfo.so.5.7
+sh        39646 a77230    0r  FIFO    0,8       0t0 78553490 pipe
+sh        39646 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+sh        39646 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+sh        39646 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+make      39647 a77230  cwd    DIR   0,21      4096  9738041 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI/SP-MZ (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+make      39647 a77230  rtd    DIR    8,1      4096        2 /
+make      39647 a77230  txt    REG    8,1    173208   789735 /usr/bin/make
+make      39647 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+make      39647 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+make      39647 a77230    0r  FIFO    0,8       0t0 78553490 pipe
+make      39647 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+make      39647 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+make      39647 a77230    3r  FIFO    0,8       0t0 78558951 pipe
+make      39647 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+mpif77    39663 a77230  cwd    DIR   0,21      4096  9738041 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI/SP-MZ (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+mpif77    39663 a77230  rtd    DIR    8,1      4096        2 /
+mpif77    39663 a77230  txt    REG   0,22     23812 52306870 /share/apps/openmpi/1.8.4/gnu/eth/bin/opal_wrapper (nas-1-1:/storage/local/d2/v0p1/)
+mpif77    39663 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+mpif77    39663 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+mpif77    39663 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+mpif77    39663 a77230  mem    REG    8,1    145720   281688 /lib64/libpthread-2.12.so
+mpif77    39663 a77230  mem    REG    8,1    598800   281692 /lib64/libm-2.12.so
+mpif77    39663 a77230  mem    REG    8,1     47064   262381 /lib64/librt-2.12.so
+mpif77    39663 a77230  mem    REG    8,1     17520   281691 /lib64/libutil-2.12.so
+mpif77    39663 a77230  mem    REG   0,22    997896 52588584 /share/apps/openmpi/1.8.4/gnu/eth/lib/libopen-pal.so.6.2.1 (nas-1-1:/storage/local/d2/v0p1/)
+mpif77    39663 a77230    0r  FIFO    0,8       0t0 78553490 pipe
+mpif77    39663 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+mpif77    39663 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+mpif77    39663 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+gfortran  39664 a77230  cwd    DIR   0,21      4096  9738041 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI/SP-MZ (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+gfortran  39664 a77230  rtd    DIR    8,1      4096        2 /
+gfortran  39664 a77230  txt    REG   0,22   3490998 54135259 /share/apps/gcc/5.3.0/bin/gfortran (nas-1-1:/storage/local/d2/v0p1/)
+gfortran  39664 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+gfortran  39664 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+gfortran  39664 a77230  mem    REG    8,1    598800   281692 /lib64/libm-2.12.so
+gfortran  39664 a77230    0r  FIFO    0,8       0t0 78553490 pipe
+gfortran  39664 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+gfortran  39664 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+gfortran  39664 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+f951      39665 a77230  cwd    DIR   0,21      4096  9738041 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI/SP-MZ (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+f951      39665 a77230  rtd    DIR    8,1      4096        2 /
+f951      39665 a77230  txt    REG   0,22 125762628 54136850 /share/apps/gcc/5.3.0/libexec/gcc/x86_64-unknown-linux-gnu/5.3.0/f951 (nas-1-1:/storage/local/d2/v0p1/)
+f951      39665 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+f951      39665 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+f951      39665 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+f951      39665 a77230  mem    REG    8,1    598800   281692 /lib64/libm-2.12.so
+f951      39665 a77230  mem    REG    8,1    376792   789857 /usr/lib64/libgmp.so.3.5.0
+f951      39665 a77230  mem    REG   0,22    108123 54136209 /share/apps/gcc/5.3.0/lib/libmpc.so.3.0.0 (nas-1-1:/storage/local/d2/v0p1/)
+f951      39665 a77230  mem    REG   0,22    424329 54136212 /share/apps/gcc/5.3.0/lib/libmpfr.so.4.1.4 (nas-1-1:/storage/local/d2/v0p1/)
+f951      39665 a77230  mem    REG   0,22    530030 54136196 /share/apps/gcc/5.3.0/lib/libgmp.so.10.3.0 (nas-1-1:/storage/local/d2/v0p1/)
+f951      39665 a77230    0r  FIFO    0,8       0t0 78553490 pipe
+f951      39665 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+f951      39665 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+f951      39665 a77230    3w   REG    8,1         0   559757 /tmp/ccChOyjO.s
+f951      39665 a77230    4r   REG   0,21      4979  9738048 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI/SP-MZ/header.h (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+f951      39665 a77230    5r   REG   0,21      1995  9738482 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI/SP-MZ/npbparams.h (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+f951      39665 a77230    6r   REG   0,21     14191  9738045 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI/SP-MZ/exact_rhs.f (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+f951      39665 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+717050.se 39666 a77230  cwd    DIR   0,21      4096  9737912 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+717050.se 39666 a77230  rtd    DIR    8,1      4096        2 /
+717050.se 39666 a77230  txt    REG    8,1    938736   524432 /bin/bash
+717050.se 39666 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+717050.se 39666 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+717050.se 39666 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+717050.se 39666 a77230  mem    REG    8,1    138280   262263 /lib64/libtinfo.so.5.7
+717050.se 39666 a77230    0r   CHR    1,3       0t0     3925 /dev/null
+717050.se 39666 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+717050.se 39666 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+717050.se 39666 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+717050.se 39671 a77230  cwd    DIR   0,21      4096  9737912 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+717050.se 39671 a77230  rtd    DIR    8,1      4096        2 /
+717050.se 39671 a77230  txt    REG    8,1    938736   524432 /bin/bash
+717050.se 39671 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+717050.se 39671 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+717050.se 39671 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+717050.se 39671 a77230  mem    REG    8,1    138280   262263 /lib64/libtinfo.so.5.7
+717050.se 39671 a77230    0r   CHR    1,3       0t0     3925 /dev/null
+717050.se 39671 a77230    1w   REG    8,2     18832   128996 /var/spool/torque/spool/717050.search6.di.uminho.pt.OU
+717050.se 39671 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+717050.se 39671 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+lsof      39672 a77230  cwd    DIR   0,21      4096  9737912 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+lsof      39672 a77230  rtd    DIR    8,1      4096        2 /
+lsof      39672 a77230  txt    REG    8,1    145872   802498 /usr/sbin/lsof
+lsof      39672 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+lsof      39672 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+lsof      39672 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+lsof      39672 a77230  mem    REG    8,1    124624   281706 /lib64/libselinux.so.1
+lsof      39672 a77230  mem    REG    8,1     65928   262179 /lib64/libnss_files-2.12.so
+lsof      39672 a77230    0r   CHR    1,3       0t0     3925 /dev/null
+lsof      39672 a77230    1w   REG   0,21         0  9739258 /home/a77230/ESC/NPB3.3.1-MZ/RESULTS_FINAL/NPB3.3-MZ-MPI/sp-mz.A.2/lsof.txt (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+lsof      39672 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+lsof      39672 a77230    3r   DIR    0,3         0        1 /proc
+lsof      39672 a77230    4r   DIR    0,3         0 78558980 /proc/39672/fd
+lsof      39672 a77230    5w  FIFO    0,8       0t0 78558985 pipe
+lsof      39672 a77230    6r  FIFO    0,8       0t0 78558986 pipe
+top       39673 a77230  cwd    DIR   0,21      4096  9737912 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+top       39673 a77230  rtd    DIR    8,1      4096        2 /
+top       39673 a77230  txt    REG    8,1     68392   795304 /usr/bin/top
+top       39673 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+top       39673 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+top       39673 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+top       39673 a77230  mem    REG    8,1     65608   269785 /lib64/libproc-3.2.8.so
+top       39673 a77230  mem    REG    8,1    195616   262285 /lib64/libncursesw.so.5.7
+top       39673 a77230  mem    REG    8,1    138280   262263 /lib64/libtinfo.so.5.7
+top       39673 a77230  mem    REG    8,1     65928   262179 /lib64/libnss_files-2.12.so
+top       39673 a77230    0r   CHR    1,3       0t0     3925 /dev/null
+top       39673 a77230    1w  FIFO    0,8       0t0 78558956 pipe
+top       39673 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+top       39673 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+grep      39674 a77230  cwd    DIR   0,21      4096  9737912 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+grep      39674 a77230  rtd    DIR    8,1      4096        2 /
+grep      39674 a77230  txt    REG    8,1    111360   544212 /bin/grep
+grep      39674 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+grep      39674 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+grep      39674 a77230  mem    REG    8,1    183848   262201 /lib64/libpcre.so.0.0.1
+grep      39674 a77230    0r  FIFO    0,8       0t0 78558956 pipe
+grep      39674 a77230    1w   REG   0,21         0  9739259 /home/a77230/ESC/NPB3.3.1-MZ/RESULTS_FINAL/NPB3.3-MZ-MPI/sp-mz.A.2/top.txt (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+grep      39674 a77230    2w   REG    8,2     10423   128999 /var/spool/torque/spool/717050.search6.di.uminho.pt.ER
+grep      39674 a77230   18w  FIFO    0,8       0t0 78553492 pipe
+lsof      39675 a77230  cwd    DIR   0,21      4096  9737912 /home/a77230/ESC/NPB3.3.1-MZ/NPB3.3-MZ-MPI (nas-0-0.local:/state/partition1/cpd-2019/a77230)
+lsof      39675 a77230  rtd    DIR    8,1      4096        2 /
+lsof      39675 a77230  txt    REG    8,1    145872   802498 /usr/sbin/lsof
+lsof      39675 a77230  mem    REG    8,1    156872   281686 /lib64/ld-2.12.so
+lsof      39675 a77230  mem    REG    8,1   1922112   281687 /lib64/libc-2.12.so
+lsof      39675 a77230  mem    REG    8,1     22536   281689 /lib64/libdl-2.12.so
+lsof      39675 a77230  mem    REG    8,1    124624   281706 /lib64/libselinux.so.1
+lsof      39675 a77230  mem    REG    8,1     65928   262179 /lib64/libnss_files-2.12.so
+lsof      39675 a77230    4r  FIFO    0,8       0t0 78558985 pipe
+lsof      39675 a77230    7w  FIFO    0,8       0t0 78558986 pipe

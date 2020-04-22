@@ -1,0 +1,81 @@
+
+
+ NAS Parallel Benchmarks (NPB3.3-MZ-OMP) - SP-MZ OpenMP Benchmark
+
+ Number of zones:   4 x   4
+ Iterations:      400    dt:   0.001500
+
+ Use the default load factors with threads
+ Number of outer-level threads:     5
+ Total number of threads:     20  (  4.0 inner-threads/outer-thread)
+
+ Calculated speedup =     16.00
+
+ Time step    1
+ Time step   20
+ Time step   40
+ Time step   60
+ Time step   80
+ Time step  100
+ Time step  120
+ Time step  140
+ Time step  160
+ Time step  180
+ Time step  200
+ Time step  220
+ Time step  240
+ Time step  260
+ Time step  280
+ Time step  300
+ Time step  320
+ Time step  340
+ Time step  360
+ Time step  380
+ Time step  400
+ Verification being performed for class A
+ accuracy setting for epsilon =  0.1000000000000E-07
+ Comparison of RMS-norms of residual
+           1 0.2800097900548E+03 0.2800097900548E+03 0.3938299177625E-13
+           2 0.2268349014438E+02 0.2268349014438E+02 0.1631992091934E-12
+           3 0.7000852739901E+02 0.7000852739901E+02 0.1055534907882E-13
+           4 0.5000771004061E+02 0.5000771004061E+02 0.5044075623339E-13
+           5 0.5552068537578E+03 0.5552068537578E+03 0.3071472468833E-13
+ Comparison of RMS-norms of solution error
+           1 0.3112046666578E+02 0.3112046666578E+02 0.2717008920963E-13
+           2 0.1172197785348E+02 0.1172197785348E+02 0.1247180038301E-12
+           3 0.1486616708032E+02 0.1486616708032E+02 0.3859523816908E-13
+           4 0.1313680576292E+02 0.1313680576292E+02 0.6923256065337E-13
+           5 0.7365834058154E+02 0.7365834058154E+02 0.5922930605174E-13
+ Verification Successful
+
+
+ SP-MZ Benchmark Completed.
+ Class           =                        A
+ Size            =            128x  128x 16
+ Iterations      =                      400
+ Time in seconds =                     3.03
+ Total o_threads =                        5
+ Total threads   =                       20
+ Mop/s total     =                 24350.14
+ Mop/s/thread    =                  1217.51
+ Operation type  =           floating point
+ Verification    =               SUCCESSFUL
+ Version         =                    3.3.1
+ Compile date    =              21 Apr 2020
+
+ Compile options:
+    F77          = gfortran
+    FLINK        = $(F77)
+    F_LIB        = (none)
+    F_INC        = (none)
+    FFLAGS       = -O3 -fopenmp
+    FLINKFLAGS   = -O3 -fopenmp
+    RAND         = (none)
+
+
+ Please send all errors/feedbacks to:
+
+ NPB Development Team
+ npb@nas.nasa.gov
+
+

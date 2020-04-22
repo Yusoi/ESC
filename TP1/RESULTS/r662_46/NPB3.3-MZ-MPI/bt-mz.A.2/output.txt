@@ -1,0 +1,3 @@
+--------------------------------------------------------------------------
+mpirun noticed that process rank 0 with PID 9942 on node compute-662-5 exited on signal 11 (Segmentation fault).
+--------------------------------------------------------------------------

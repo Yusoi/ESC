@@ -1,0 +1,4 @@
+Linux 2.6.32-279.14.1.el6.x86_64 (compute-662-6.local) 	04/21/20 	_x86_64_	(48 CPU)
+
+21:26:28     CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest   %idle
+21:26:28     all   12.28    0.00    0.34    0.02    0.00    0.00    0.00    0.00   87.35

@@ -1,0 +1,68 @@
+
+
+ NAS Parallel Benchmarks (NPB3.3-MZ-SER) - LU Multi-Zone Serial Benchmark
+
+ Number of zones:   4 x   4
+ Iterations: 250    dt:   2.000000
+
+ Time step    1
+ Time step   20
+ Time step   40
+ Time step   60
+ Time step   80
+ Time step  100
+ Time step  120
+ Time step  140
+ Time step  160
+ Time step  180
+ Time step  200
+ Time step  220
+ Time step  240
+ Time step  250
+
+ Verification being performed for class C
+ Accuracy setting for epsilon =  0.1000000000000E-07
+ Comparison of RMS-norms of residual
+           1   0.4108743427233E+05 0.4108743427233E+05 0.9208406478482E-13
+           2   0.3439004802235E+04 0.3439004802235E+04 0.9031462836388E-13
+           3   0.9961331392486E+04 0.9961331392486E+04 0.2939941283269E-13
+           4   0.8321426758084E+04 0.8321426758084E+04 0.2054755859831E-13
+           5   0.7463792419218E+05 0.7463792419218E+05 0.3041481659887E-13
+ Comparison of RMS-norms of solution error
+           1   0.3429276307954E+04 0.3429276307955E+04 0.1473268006031E-12
+           2   0.2336680861825E+03 0.2336680861825E+03 0.8271032098744E-13
+           3   0.8216363109621E+03 0.8216363109621E+03 0.2006312434066E-13
+           4   0.7143809828225E+03 0.7143809828225E+03 0.1304950847983E-13
+           5   0.7057470798773E+04 0.7057470798773E+04 0.2628943490548E-13
+ Comparison of surface integral
+               0.1125826349653E+05 0.1125826349653E+05 0.1765952110366E-12
+ Verification Successful
+
+
+ LU-MZ Benchmark Completed.
+ Class           =                        C
+ Size            =            480x  320x 28
+ Iterations      =                      250
+ Time in seconds =                   627.61
+ Mop/s total     =                  3060.03
+ Operation type  =           floating point
+ Verification    =               SUCCESSFUL
+ Version         =                    3.3.1
+ Compile date    =              18 Apr 2020
+
+ Compile options:
+    F77          = gfortran
+    FLINK        = $(F77)
+    F_LIB        = (none)
+    F_INC        = (none)
+    FFLAGS       = -O3
+    FLINKFLAGS   = -O3
+    RAND         = (none)
+
+
+ Please send all errors/feedbacks to:
+
+ NPB Development Team
+ npb@nas.nasa.gov
+
+
