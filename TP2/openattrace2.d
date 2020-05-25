@@ -1,9 +1,9 @@
 #!/usr/sbin/dtrace -qs
 /*
-*inline int O_WRONLY = 1;
-*inline int O_RDWR = 2;
-*inline int O_APPEND = 8;
-*inline int O_CREAT = 256;
+*O_WRONLY = 1;
+*O_RDWR = 2;
+*O_APPEND = 8;
+*O_CREAT = 256;
 */
 
 this int create;

@@ -1,11 +1,4 @@
 #!/usr/sbin/dtrace -qs
-/*
-*inline int O_WRONLY = 1;
-*inline int O_RDWR = 2;
-*inline int O_APPEND = 8;
-*inline int O_CREAT = 256;
-*/
-
 
 self uint64_t start_time;
 
@@ -25,7 +18,7 @@ syscall:::entry
 }
 
 syscall:::return
-/execname == $$1/
+/execname == $$1 && self->start_time != 0/
 {
 	@time[probefunc] = sum(timestamp-self->start_time);
 }
