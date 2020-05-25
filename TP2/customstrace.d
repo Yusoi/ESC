@@ -18,14 +18,14 @@ dtrace:::BEGIN
 }
 
 syscall:::entry
-/execname == $1/
+/execname == $$1/
 {
 	@num[probefunc] = count();
 	self->start_time = timestamp;
 }
 
 syscall:::return
-/execname == $1/
+/execname == $$1/
 {
 	@time[probefunc] = sum(timestamp-self->start_time);
 }
