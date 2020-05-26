@@ -13,8 +13,17 @@ extern "C" {
 
 #if _DTRACE_VERSION
 
-#define	HEATTIMER_QUERY_END_ITERATION() \
-	__dtrace_heattimer___query__end_iteration()
+#define	HEATTIMER_QUERY_END_CALC() \
+	__dtrace_heattimer___query__end_calc()
+#ifndef	__sparc
+#define	HEATTIMER_QUERY_END_CALC_ENABLED() \
+	__dtraceenabled_heattimer___query__end_calc()
+#else
+#define	HEATTIMER_QUERY_END_CALC_ENABLED() \
+	__dtraceenabled_heattimer___query__end_calc(0)
+#endif
+#define	HEATTIMER_QUERY_END_ITERATION(arg0) \
+	__dtrace_heattimer___query__end_iteration(arg0)
 #ifndef	__sparc
 #define	HEATTIMER_QUERY_END_ITERATION_ENABLED() \
 	__dtraceenabled_heattimer___query__end_iteration()
@@ -31,8 +40,17 @@ extern "C" {
 #define	HEATTIMER_QUERY_MATRIX_GENERATION_ENABLED() \
 	__dtraceenabled_heattimer___query__matrix_generation(0)
 #endif
-#define	HEATTIMER_QUERY_START_COPY(arg0) \
-	__dtrace_heattimer___query__start_copy(arg0)
+#define	HEATTIMER_QUERY_START_CALC() \
+	__dtrace_heattimer___query__start_calc()
+#ifndef	__sparc
+#define	HEATTIMER_QUERY_START_CALC_ENABLED() \
+	__dtraceenabled_heattimer___query__start_calc()
+#else
+#define	HEATTIMER_QUERY_START_CALC_ENABLED() \
+	__dtraceenabled_heattimer___query__start_calc(0)
+#endif
+#define	HEATTIMER_QUERY_START_COPY() \
+	__dtrace_heattimer___query__start_copy()
 #ifndef	__sparc
 #define	HEATTIMER_QUERY_START_COPY_ENABLED() \
 	__dtraceenabled_heattimer___query__start_copy()
@@ -40,8 +58,8 @@ extern "C" {
 #define	HEATTIMER_QUERY_START_COPY_ENABLED() \
 	__dtraceenabled_heattimer___query__start_copy(0)
 #endif
-#define	HEATTIMER_QUERY_START_ITERATION(arg0) \
-	__dtrace_heattimer___query__start_iteration(arg0)
+#define	HEATTIMER_QUERY_START_ITERATION() \
+	__dtrace_heattimer___query__start_iteration()
 #ifndef	__sparc
 #define	HEATTIMER_QUERY_START_ITERATION_ENABLED() \
 	__dtraceenabled_heattimer___query__start_iteration()
@@ -51,7 +69,13 @@ extern "C" {
 #endif
 
 
-extern void __dtrace_heattimer___query__end_iteration(void);
+extern void __dtrace_heattimer___query__end_calc(void);
+#ifndef	__sparc
+extern int __dtraceenabled_heattimer___query__end_calc(void);
+#else
+extern int __dtraceenabled_heattimer___query__end_calc(long);
+#endif
+extern void __dtrace_heattimer___query__end_iteration(int);
 #ifndef	__sparc
 extern int __dtraceenabled_heattimer___query__end_iteration(void);
 #else
@@ -63,13 +87,19 @@ extern int __dtraceenabled_heattimer___query__matrix_generation(void);
 #else
 extern int __dtraceenabled_heattimer___query__matrix_generation(long);
 #endif
-extern void __dtrace_heattimer___query__start_copy(int);
+extern void __dtrace_heattimer___query__start_calc(void);
+#ifndef	__sparc
+extern int __dtraceenabled_heattimer___query__start_calc(void);
+#else
+extern int __dtraceenabled_heattimer___query__start_calc(long);
+#endif
+extern void __dtrace_heattimer___query__start_copy(void);
 #ifndef	__sparc
 extern int __dtraceenabled_heattimer___query__start_copy(void);
 #else
 extern int __dtraceenabled_heattimer___query__start_copy(long);
 #endif
-extern void __dtrace_heattimer___query__start_iteration(int);
+extern void __dtrace_heattimer___query__start_iteration(void);
 #ifndef	__sparc
 extern int __dtraceenabled_heattimer___query__start_iteration(void);
 #else
@@ -78,13 +108,17 @@ extern int __dtraceenabled_heattimer___query__start_iteration(long);
 
 #else
 
-#define	HEATTIMER_QUERY_END_ITERATION()
+#define	HEATTIMER_QUERY_END_CALC()
+#define	HEATTIMER_QUERY_END_CALC_ENABLED() (0)
+#define	HEATTIMER_QUERY_END_ITERATION(arg0)
 #define	HEATTIMER_QUERY_END_ITERATION_ENABLED() (0)
 #define	HEATTIMER_QUERY_MATRIX_GENERATION(arg0)
 #define	HEATTIMER_QUERY_MATRIX_GENERATION_ENABLED() (0)
-#define	HEATTIMER_QUERY_START_COPY(arg0)
+#define	HEATTIMER_QUERY_START_CALC()
+#define	HEATTIMER_QUERY_START_CALC_ENABLED() (0)
+#define	HEATTIMER_QUERY_START_COPY()
 #define	HEATTIMER_QUERY_START_COPY_ENABLED() (0)
-#define	HEATTIMER_QUERY_START_ITERATION(arg0)
+#define	HEATTIMER_QUERY_START_ITERATION()
 #define	HEATTIMER_QUERY_START_ITERATION_ENABLED() (0)
 
 #endif

@@ -2,10 +2,11 @@
 #include <stdlib.h>
 #include <omp.h>
 #include <time.h>
+#include "heattimer.h"
 
 #define N_MAX 1000
-#define N_THREADS 4
-#define MAT_SIZE 256
+#define N_THREADS 8
+#define MAT_SIZE 1024
 #define M_SIZE MAT_SIZE + 2
 
 int main()
@@ -48,16 +49,19 @@ int main()
 
     double start_time = omp_get_wtime();
 
+    if(HEATTIMER_QUERY_START_CALC_ENABLED())
+        HEATTIMER_QUERY_START_CALC();
+
     //Iterações sobre a difusão de calor
     for (int it = 0; it < N_MAX; it++)
     {
 
         #pragma omp parallel num_threads(N_THREADS)
         {
-            #pragma omp single
+            #pragma omp master
             {
                 if(HEATTIMER_QUERY_START_ITERATION_ENABLED())
-                    HEATTIMER_QUERY_START_ITERATION(it);
+                    HEATTIMER_QUERY_START_ITERATION();
             }
 
             #pragma omp for schedule(static)
@@ -69,10 +73,10 @@ int main()
                 }
             }
 
-            #pragma omp single
+            #pragma omp master
             {
                 if(HEATTIMER_QUERY_START_COPY_ENABLED())
-                    HEATTIMER_QUERY_START_COPY(it);
+                    HEATTIMER_QUERY_START_COPY();
             }
 
             //Copiar G2 para G1
@@ -85,13 +89,16 @@ int main()
                 }
             }
 
-            #pragma omp single
+            #pragma omp master
             {
                 if(HEATTIMER_QUERY_END_ITERATION_ENABLED())
-                    HEATTIMER_QUERY_END_ITERATION();
+                    HEATTIMER_QUERY_END_ITERATION(it);
             }
         }
     }
+
+    if(HEATTIMER_QUERY_END_CALC_ENABLED())
+        HEATTIMER_QUERY_END_CALC();
 
     double end_time = omp_get_wtime();
 

@@ -2,17 +2,11 @@
 #include <stdlib.h>
 #include <time.h>
 #include <mpi.h>
+#include "heattimer.h"
 
 #define N_MAX 1000
-
-#ifndef N_MACHINES
-#define N_MACHINES 4
-#endif
-
-#ifndef MAT_SIZE
-#define MAT_SIZE 256
-#endif
-
+#define N_MACHINES 8
+#define MAT_SIZE 1024
 #define M_SIZE (MAT_SIZE + 2)
 
 int main(int argc, char *argv[])
@@ -38,6 +32,11 @@ int main(int argc, char *argv[])
     }
     MPI_Request left_send_request, right_send_request, left_recv_request, right_recv_request;
 
+    if(rank == 0){
+        if(HEATTIMER_QUERY_MATRIX_GENERATION_ENABLED())
+            HEATTIMER_QUERY_MATRIX_GENERATION(MAT_SIZE);
+    }
+    
     int **G1 = (int **)malloc(sizeof(int *) * i_division);
     int **G2 = (int **)malloc(sizeof(int *) * i_division);
     for (int i = 0; i < i_division; i++)
@@ -61,9 +60,18 @@ int main(int argc, char *argv[])
         right_recv_buffer[j] = 0;
     }
 
+    if(rank == 0){
+        if(HEATTIMER_QUERY_START_CALC_ENABLED())
+            HEATTIMER_QUERY_START_CALC();
+    }
+    
     //Iterações sobre a difusão de calor
     for (int it = 0; it < N_MAX; it++)
     {
+
+        if(HEATTIMER_QUERY_START_ITERATION_ENABLED())
+            HEATTIMER_QUERY_START_ITERATION();
+
         //Computes the parts with no dependencies
         for (int i = 1; i < i_division - 1; i++)
         {
@@ -126,6 +134,9 @@ int main(int argc, char *argv[])
             MPI_Irecv(right_recv_buffer, M_SIZE, MPI_INT, rank + 1, 0, MPI_COMM_WORLD, &right_recv_request);
         }
 
+        if(HEATTIMER_QUERY_START_COPY_ENABLED())
+            HEATTIMER_QUERY_START_COPY();
+
         //Copies from G2 to G1
         for (int i = 0; i < i_division; i++)
         {
@@ -134,6 +145,9 @@ int main(int argc, char *argv[])
                 G1[i][j] = G2[i][j];
             }
         }
+
+        if(HEATTIMER_QUERY_END_ITERATION_ENABLED())
+            HEATTIMER_QUERY_END_ITERATION(it);
     }
 
     for (int i = 0; i < i_division; i++)
@@ -148,8 +162,13 @@ int main(int argc, char *argv[])
     //int MPI_Gather(void* sendbuf, int sendcount, MPI_Datatype sendtype, void* recvbuf, int recvcount, MPI_Datatype recvtype, int root, MPI_Comm comm)
     MPI_Gather(final_send_buffer, MACH_MAT_SIZE, MPI_INT, final_result_buffer, MACH_MAT_SIZE, MPI_INT, 0, MPI_COMM_WORLD);
 
+    
+
     if (rank == 0)
     {
+        if(HEATTIMER_QUERY_END_CALC_ENABLED())
+            HEATTIMER_QUERY_END_CALC();
+
         //Creates the final matrix to output the result
         int **FINAL_MAT = (int **)malloc(sizeof(int *) * M_SIZE);
         for (int i = 0; i < M_SIZE; i++)

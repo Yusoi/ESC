@@ -16,7 +16,7 @@ seq: seq_final.o
 clean:
 	-rm -f *.o
 	-rm -f seq
-	-rm -f seq_dtrace.h
+	-rm -f heattimer.h
 
 
 
