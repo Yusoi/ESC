@@ -11,6 +11,11 @@ this int it_time;
 this int copy_time;
 this int calc_time;
 
+heattimer*:::BEGIN
+{
+    printf("Started recording probe data...");
+}
+
 heattimer*:::query-matrix_generation
 {
     m_gen_time = timestamp; 
