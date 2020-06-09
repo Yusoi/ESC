@@ -49,6 +49,8 @@ int main()
 
     double start_time = omp_get_wtime();
 
+    omp_set_num_threads(N_THREADS);
+
     if(HEATTIMER_QUERY_START_CALC_ENABLED())
         HEATTIMER_QUERY_START_CALC();
 
@@ -56,9 +58,9 @@ int main()
     for (int it = 0; it < N_MAX; it++)
     {
 
-        #pragma omp parallel num_threads(N_THREADS)
+        #pragma omp parallel
         {
-            #pragma omp master
+	    #pragma omp master
             {
                 if(HEATTIMER_QUERY_START_ITERATION_ENABLED())
                     HEATTIMER_QUERY_START_ITERATION();
@@ -90,7 +92,7 @@ int main()
             }
 
             #pragma omp master
-            {
+	    {
                 if(HEATTIMER_QUERY_END_ITERATION_ENABLED())
                     HEATTIMER_QUERY_END_ITERATION(it);
             }

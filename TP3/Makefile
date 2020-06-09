@@ -22,7 +22,7 @@ openmp_final.o: heattimer.d openmp.o
 	dtrace -G -s heattimer.d openmp.o -o openmp_final.o
 # link and create executable file "prime"
 openmp: openmp_final.o
-	gcc -O3 -fopenmp -Wl,--strip-all -o openmp openmp_final.o openmp.o heattimer.h -lm
+	gcc -O4 -Wl,--strip-all -o openmp openmp_final.o openmp.o heattimer.h -lm -fopenmp
 
 # compile the main program
 mpi.o: mpi.c heattimer.h
