@@ -35,7 +35,7 @@ syscall::openat:return
 	@successful[pid,execname] = sum(this->successful);
 }
 
-tick-1sec
+tick-$1sec
 {	
 	printf("%-20Y\n",walltimestamp);
 	printa("%6d %30s %@6d %@6d %@12d\n",@opens,@creates,@successful);
