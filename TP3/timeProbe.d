@@ -40,7 +40,7 @@ heattimer*:::query-end_iteration
     this->calc_time = this->it_time - this->copy_time;
     printf("Iteration %d finished on PROCESS: %d, THREAD: %d\n\tTime spent on calculations: %d\n\tTime spent on copies: %d\n\tTime spent on the whole iteration: %d\n",
            arg0,
-	   pid,
+	       pid,
            tid,
            this->calc_time,
            this->copy_time,
@@ -59,6 +59,67 @@ heattimer*:::query-end_calc
     alg_time = timestamp - alg_time;
 }
 
+syscall::open*:entry
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+
+}
+
+syscall::open*:return
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+
+}
+
+syscall::pwrite*:entry
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+
+}
+
+syscall::pwrite*:return
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+    
+}
+
+sched:::on-cpu
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+    printf("Thread %d started running\n",tid);
+}
+
+sched:::off-cpu
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+    printf("Thread %d stopped running\n",tid);
+}
+
+lockstat:::adaptive-block
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+    @blocks = count();
+}
+
+proc:::exec
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+
+}
+
+proc:::exec-failure
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+
+}
+
+proc:::exec-success
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+    
+}
+
+
 dtrace:::END
 {
     printf("---------------------- Final Report ----------------------\n");
@@ -74,4 +135,5 @@ dtrace:::END
     printf("Copying time:\n");
     printa("    Average:                             %@d\n",@avg_copy_time);
     printa("    Maximum:                             %@d\n",@max_copy_time);
+    printa("Total number of threads locked:          %@d\n",@blocks);
 }
