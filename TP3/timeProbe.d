@@ -6,6 +6,7 @@ int alg_time;
 
 self int iteration_start;
 self int copy_start;
+self string write_path;
 
 this int it_time;
 this int copy_time;
@@ -62,25 +63,21 @@ heattimer*:::query-end_calc
 syscall::open*:entry
 /execname == "seq" || execname == "openmp" || execname == "mpi"/
 {
-
-}
-
-syscall::open*:return
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
-{
-
+    self->open_path = copyinstr(arg1);
+    printf("Opened the matrix file: %s\n",self->open_path);
 }
 
 syscall::pwrite*:entry
 /execname == "seq" || execname == "openmp" || execname == "mpi"/
 {
-
+    self->write_path = copyinstr(arg1);
+    printf("Started writing in file: %s\n",self->write_path);
 }
 
 syscall::pwrite*:return
 /execname == "seq" || execname == "openmp" || execname == "mpi"/
 {
-    
+    printf("Finished writing in file: %s\n",self->write_path);
 }
 
 sched:::on-cpu
@@ -104,19 +101,19 @@ lockstat:::adaptive-block
 proc:::exec
 /execname == "seq" || execname == "openmp" || execname == "mpi"/
 {
-
+    printf("Process %d started executing\n",pid);
 }
 
 proc:::exec-failure
 /execname == "seq" || execname == "openmp" || execname == "mpi"/
 {
-
+    printf("Process %d exectued unsuccessfully\n",pid);
 }
 
 proc:::exec-success
 /execname == "seq" || execname == "openmp" || execname == "mpi"/
 {
-    
+    printf("Process %d executed correctly\n",pid);
 }
 
 
