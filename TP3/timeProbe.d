@@ -7,37 +7,44 @@ int alg_time;
 self int iteration_start;
 self int copy_start;
 self string write_path;
+self int sleep_time;
+self int asleep;
 
 this int it_time;
 this int copy_time;
 this int calc_time;
 
+dtrace:::BEGIN
+{
+    printf("Tracer is ready!");
+}
+
 heattimer*:::query-matrix_generation
 {
-    m_gen_time = timestamp; 
+    m_gen_time = walltimestamp; 
     m_size = arg0;
 }
 
 heattimer*:::query-start_calc
 {
-    m_gen_time = timestamp - m_gen_time;
-    alg_time = timestamp;
+    m_gen_time = walltimestamp - m_gen_time;
+    alg_time = walltimestamp;
 }
 
 heattimer*:::query-start_iteration
 {
-    self->iteration_start = timestamp;
+    self->iteration_start = walltimestamp;
 }
 
 heattimer*:::query-start_copy
 {
-    self->copy_start = timestamp;
+    self->copy_start = walltimestamp;
 }
 
 heattimer*:::query-end_iteration
 {
-    this->it_time = timestamp - self->iteration_start;
-    this->copy_time = timestamp - self->copy_start;
+    this->it_time = walltimestamp - self->iteration_start;
+    this->copy_time = walltimestamp - self->copy_start;
     this->calc_time = this->it_time - this->copy_time;
     printf("Iteration %d finished on PROCESS: %d, THREAD: %d\n\tTime spent on calculations: %d\n\tTime spent on copies: %d\n\tTime spent on the whole iteration: %d\n",
            arg0,
@@ -57,7 +64,7 @@ heattimer*:::query-end_iteration
 
 heattimer*:::query-end_calc
 {
-    alg_time = timestamp - alg_time;
+    alg_time = walltimestamp - alg_time;
 }
 
 syscall::open*:entry
@@ -90,6 +97,20 @@ sched:::off-cpu
 /execname == "seq" || execname == "openmp" || execname == "mpi"/
 {
     printf("Thread %d stopped running\n",tid);
+}
+
+sched:::sleep
+/execname == "seq" || execname == "openmp" || execname == "mpi"/
+{
+    self->sleep_time = walltimestamp;
+    self->asleep = 1;
+}
+
+sched:::wakeup
+/(execname == "seq" || execname == "openmp" || execname == "mpi") && self->asleep == 1/
+{
+    @sleep[tid] = sum(walltimestamp - self->sleep_time);
+    self->asleep = 0;
 }
 
 lockstat:::adaptive-block
@@ -133,4 +154,5 @@ dtrace:::END
     printa("    Average:                             %@d\n",@avg_copy_time);
     printa("    Maximum:                             %@d\n",@max_copy_time);
     printa("Total number of threads locked:          %@d\n",@blocks);
+    printa("Time spent sleeping by thread %d         %@d\n",@sleep);
 }
