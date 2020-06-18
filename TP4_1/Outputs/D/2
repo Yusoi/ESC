@@ -1,0 +1,436 @@
+ Percent |	Source code & Disassembly of sort for cycles:uppp (45335 samples)
+---------------------------------------------------------------------------------
+         :
+         :
+         :
+         :	Disassembly of section .text:
+         :
+         :	0000000000400bdf <sort2>:
+         :	sort2():
+    0.00 :	  400bdf:       push   %rbp
+    0.00 :	  400be0:       mov    %rsp,%rbp
+    0.00 :	  400be3:       sub    $0x60,%rsp
+    0.00 :	  400be7:       mov    %rdi,-0x58(%rbp)
+    0.00 :	  400beb:       mov    %esi,-0x5c(%rbp)
+    0.00 :	  400bee:       mov    %fs:0x28,%rax
+    0.00 :	  400bf7:       mov    %rax,-0x8(%rbp)
+    0.00 :	  400bfb:       xor    %eax,%eax
+    0.00 :	  400bfd:       mov    -0x58(%rbp),%rax
+    0.00 :	  400c01:       mov    (%rax),%eax
+    0.00 :	  400c03:       mov    %eax,-0x40(%rbp)
+    0.00 :	  400c06:       movl   $0x1,-0x3c(%rbp)
+    0.00 :	  400c0d:       mov    -0x5c(%rbp),%eax
+    0.00 :	  400c10:       cltq
+    0.00 :	  400c12:       mov    $0x4,%esi
+    0.00 :	  400c17:       mov    %rax,%rdi
+    0.00 :	  400c1a:       callq  400620 <calloc@plt>
+    0.00 :	  400c1f:       mov    %rax,-0x38(%rbp)
+    0.00 :	  400c23:       movl   $0x0,-0x44(%rbp)
+    0.00 :	  400c2a:       jmp    400c64 <sort2+0x85>
+    0.02 :	  400c2c:       mov    -0x44(%rbp),%eax
+    0.00 :	  400c2f:       cltq
+    0.00 :	  400c31:       lea    0x0(,%rax,4),%rdx
+    0.20 :	  400c39:       mov    -0x58(%rbp),%rax
+    0.00 :	  400c3d:       add    %rdx,%rax
+    1.27 :	  400c40:       mov    (%rax),%eax
+    0.00 :	  400c42:       cmp    -0x40(%rbp),%eax
+    0.26 :	  400c45:       jle    400c60 <sort2+0x81>
+    0.00 :	  400c47:       mov    -0x44(%rbp),%eax
+    0.00 :	  400c4a:       cltq
+    0.00 :	  400c4c:       lea    0x0(,%rax,4),%rdx
+    0.00 :	  400c54:       mov    -0x58(%rbp),%rax
+    0.00 :	  400c58:       add    %rdx,%rax
+    0.00 :	  400c5b:       mov    (%rax),%eax
+    0.00 :	  400c5d:       mov    %eax,-0x40(%rbp)
+    0.01 :	  400c60:       addl   $0x1,-0x44(%rbp)
+    0.00 :	  400c64:       mov    -0x44(%rbp),%eax
+    0.00 :	  400c67:       cmp    -0x5c(%rbp),%eax
+    0.19 :	  400c6a:       jl     400c2c <sort2+0x4d>
+    0.00 :	  400c6c:       jmpq   400e17 <sort2+0x238>
+    0.00 :	  400c71:       movq   $0x0,-0x30(%rbp)
+    0.00 :	  400c79:       movq   $0x0,-0x28(%rbp)
+    0.00 :	  400c81:       movq   $0x0,-0x20(%rbp)
+    0.00 :	  400c89:       movq   $0x0,-0x18(%rbp)
+    0.00 :	  400c91:       movq   $0x0,-0x10(%rbp)
+    0.00 :	  400c99:       movl   $0x0,-0x44(%rbp)
+    0.00 :	  400ca0:       jmp    400cf3 <sort2+0x114>
+    0.08 :	  400ca2:       mov    -0x44(%rbp),%eax
+    0.02 :	  400ca5:       cltq
+    0.01 :	  400ca7:       lea    0x0(,%rax,4),%rdx
+    1.86 :	  400caf:       mov    -0x58(%rbp),%rax
+    0.05 :	  400cb3:       add    %rdx,%rax
+    0.69 :	  400cb6:       mov    (%rax),%eax
+    0.00 :	  400cb8:       cltd
+    6.80 :	  400cb9:       idivl  -0x3c(%rbp)
+    0.15 :	  400cbc:       mov    %eax,%ecx
+    1.91 :	  400cbe:       mov    $0x66666667,%edx
+    0.07 :	  400cc3:       mov    %ecx,%eax
+    2.10 :	  400cc5:       imul   %edx
+    0.28 :	  400cc7:       sar    $0x2,%edx
+    0.07 :	  400cca:       mov    %ecx,%eax
+    0.00 :	  400ccc:       sar    $0x1f,%eax
+    2.13 :	  400ccf:       sub    %eax,%edx
+    0.18 :	  400cd1:       mov    %edx,%eax
+    0.47 :	  400cd3:       shl    $0x2,%eax
+    0.44 :	  400cd6:       add    %edx,%eax
+    2.50 :	  400cd8:       add    %eax,%eax
+    0.79 :	  400cda:       sub    %eax,%ecx
+    0.05 :	  400cdc:       mov    %ecx,%edx
+    0.61 :	  400cde:       movslq %edx,%rax
+    8.60 :	  400ce1:       mov    -0x30(%rbp,%rax,4),%eax
+    1.84 :	  400ce5:       lea    0x1(%rax),%ecx
+    0.00 :	  400ce8:       movslq %edx,%rax
+    3.88 :	  400ceb:       mov    %ecx,-0x30(%rbp,%rax,4)
+    0.07 :	  400cef:       addl   $0x1,-0x44(%rbp)
+    0.21 :	  400cf3:       mov    -0x44(%rbp),%eax
+    0.00 :	  400cf6:       cmp    -0x5c(%rbp),%eax
+    1.83 :	  400cf9:       jl     400ca2 <sort2+0xc3>
+    0.00 :	  400cfb:       movl   $0x1,-0x44(%rbp)
+    0.00 :	  400d02:       jmp    400d28 <sort2+0x149>
+    0.00 :	  400d04:       mov    -0x44(%rbp),%eax
+    0.00 :	  400d07:       cltq
+    0.00 :	  400d09:       mov    -0x30(%rbp,%rax,4),%edx
+    0.00 :	  400d0d:       mov    -0x44(%rbp),%eax
+    0.00 :	  400d10:       sub    $0x1,%eax
+    0.00 :	  400d13:       cltq
+    0.00 :	  400d15:       mov    -0x30(%rbp,%rax,4),%eax
+    0.00 :	  400d19:       add    %eax,%edx
+    0.00 :	  400d1b:       mov    -0x44(%rbp),%eax
+    0.00 :	  400d1e:       cltq
+    0.00 :	  400d20:       mov    %edx,-0x30(%rbp,%rax,4)
+    0.00 :	  400d24:       addl   $0x1,-0x44(%rbp)
+    0.00 :	  400d28:       cmpl   $0x9,-0x44(%rbp)
+    0.00 :	  400d2c:       jle    400d04 <sort2+0x125>
+    0.00 :	  400d2e:       mov    -0x5c(%rbp),%eax
+    0.00 :	  400d31:       sub    $0x1,%eax
+    0.00 :	  400d34:       mov    %eax,-0x44(%rbp)
+    0.00 :	  400d37:       jmpq   400dbd <sort2+0x1de>
+    0.02 :	  400d3c:       mov    -0x44(%rbp),%eax
+    0.00 :	  400d3f:       cltq
+    0.00 :	  400d41:       lea    0x0(,%rax,4),%rdx
+    1.87 :	  400d49:       mov    -0x58(%rbp),%rax
+    0.01 :	  400d4d:       add    %rdx,%rax
+    0.72 :	  400d50:       mov    (%rax),%eax
+    0.01 :	  400d52:       cltd
+    6.38 :	  400d53:       idivl  -0x3c(%rbp)
+    0.01 :	  400d56:       mov    %eax,%ecx
+    1.93 :	  400d58:       mov    $0x66666667,%edx
+    0.00 :	  400d5d:       mov    %ecx,%eax
+    2.12 :	  400d5f:       imul   %edx
+    0.07 :	  400d61:       sar    $0x2,%edx
+    0.01 :	  400d64:       mov    %ecx,%eax
+    0.00 :	  400d66:       sar    $0x1f,%eax
+    1.87 :	  400d69:       sub    %eax,%edx
+    0.05 :	  400d6b:       mov    %edx,%eax
+    0.07 :	  400d6d:       shl    $0x2,%eax
+    0.03 :	  400d70:       add    %edx,%eax
+    2.18 :	  400d72:       add    %eax,%eax
+    0.06 :	  400d74:       sub    %eax,%ecx
+    0.02 :	  400d76:       mov    %ecx,%edx
+    0.02 :	  400d78:       movslq %edx,%rax
+    3.75 :	  400d7b:       mov    -0x30(%rbp,%rax,4),%eax
+    0.73 :	  400d7f:       lea    -0x1(%rax),%ecx
+    0.00 :	  400d82:       movslq %edx,%rax
+    1.82 :	  400d85:       mov    %ecx,-0x30(%rbp,%rax,4)
+    1.03 :	  400d89:       movslq %edx,%rax
+    3.23 :	  400d8c:       mov    -0x30(%rbp,%rax,4),%eax
+    3.25 :	  400d90:       cltq
+    1.87 :	  400d92:       lea    0x0(,%rax,4),%rdx
+    0.13 :	  400d9a:       mov    -0x38(%rbp),%rax
+    1.72 :	  400d9e:       add    %rax,%rdx
+    0.00 :	  400da1:       mov    -0x44(%rbp),%eax
+    0.00 :	  400da4:       cltq
+    0.12 :	  400da6:       lea    0x0(,%rax,4),%rcx
+    1.79 :	  400dae:       mov    -0x58(%rbp),%rax
+    0.00 :	  400db2:       add    %rcx,%rax
+    0.03 :	  400db5:       mov    (%rax),%eax
+    9.82 :	  400db7:       mov    %eax,(%rdx)
+    0.02 :	  400db9:       subl   $0x1,-0x44(%rbp)
+    0.21 :	  400dbd:       cmpl   $0x0,-0x44(%rbp)
+    1.97 :	  400dc1:       jns    400d3c <sort2+0x15d>
+    0.00 :	  400dc7:       movl   $0x0,-0x44(%rbp)
+    0.00 :	  400dce:       jmp    400e00 <sort2+0x221>
+    0.00 :	  400dd0:       mov    -0x44(%rbp),%eax
+    0.00 :	  400dd3:       cltq
+    0.00 :	  400dd5:       lea    0x0(,%rax,4),%rdx
+    1.91 :	  400ddd:       mov    -0x58(%rbp),%rax
+    0.00 :	  400de1:       add    %rax,%rdx
+    0.00 :	  400de4:       mov    -0x44(%rbp),%eax
+    0.00 :	  400de7:       cltq
+    1.93 :	  400de9:       lea    0x0(,%rax,4),%rcx
+    0.01 :	  400df1:       mov    -0x38(%rbp),%rax
+    0.00 :	  400df5:       add    %rcx,%rax
+    3.02 :	  400df8:       mov    (%rax),%eax
+    2.66 :	  400dfa:       mov    %eax,(%rdx)
+    0.01 :	  400dfc:       addl   $0x1,-0x44(%rbp)
+    0.01 :	  400e00:       mov    -0x44(%rbp),%eax
+    0.00 :	  400e03:       cmp    -0x5c(%rbp),%eax
+    1.86 :	  400e06:       jl     400dd0 <sort2+0x1f1>
+    0.00 :	  400e08:       mov    -0x3c(%rbp),%edx
+    0.00 :	  400e0b:       mov    %edx,%eax
+    0.00 :	  400e0d:       shl    $0x2,%eax
+    0.00 :	  400e10:       add    %edx,%eax
+    0.00 :	  400e12:       add    %eax,%eax
+    0.00 :	  400e14:       mov    %eax,-0x3c(%rbp)
+    0.00 :	  400e17:       mov    -0x40(%rbp),%eax
+    0.00 :	  400e1a:       cltd
+    0.00 :	  400e1b:       idivl  -0x3c(%rbp)
+    0.00 :	  400e1e:       test   %eax,%eax
+    0.00 :	  400e20:       jg     400c71 <sort2+0x92>
+    0.00 :	  400e26:       mov    -0x38(%rbp),%rax
+    0.00 :	  400e2a:       mov    %rax,%rdi
+    0.00 :	  400e2d:       callq  4005f0 <free@plt>
+    0.00 :	  400e32:       nop
+    0.00 :	  400e33:       mov    -0x8(%rbp),%rax
+    0.00 :	  400e37:       xor    %fs:0x28,%rax
+    0.00 :	  400e40:       je     400e47 <sort2+0x268>
+    0.00 :	  400e42:       callq  400600 <__stack_chk_fail@plt>
+    0.00 :	  400e47:       leaveq
+    0.00 :	  400e48:       retq
+ Percent |	Source code & Disassembly of sort for cycles:uppp (1063 samples)
+--------------------------------------------------------------------------------
+         :
+         :
+         :
+         :	Disassembly of section .text:
+         :
+         :	0000000000400a49 <copy_vector>:
+         :	copy_vector():
+    0.00 :	  400a49:       push   %rbp
+    0.00 :	  400a4a:       mov    %rsp,%rbp
+    0.00 :	  400a4d:       mov    %rdi,-0x18(%rbp)
+    0.00 :	  400a51:       mov    %rsi,-0x20(%rbp)
+    0.00 :	  400a55:       mov    %edx,-0x24(%rbp)
+    0.00 :	  400a58:       movl   $0x0,-0x4(%rbp)
+    0.00 :	  400a5f:       jmp    400a7b <copy_vector+0x32>
+    1.41 :	  400a61:       mov    -0x18(%rbp),%rax
+   44.68 :	  400a65:       mov    (%rax),%edx
+    0.09 :	  400a67:       mov    -0x20(%rbp),%rax
+   25.78 :	  400a6b:       mov    %edx,(%rax)
+    0.00 :	  400a6d:       addl   $0x1,-0x4(%rbp)
+   15.71 :	  400a71:       addq   $0x4,-0x18(%rbp)
+    0.09 :	  400a76:       addq   $0x4,-0x20(%rbp)
+    0.09 :	  400a7b:       mov    -0x4(%rbp),%eax
+    0.00 :	  400a7e:       cmp    -0x24(%rbp),%eax
+   12.14 :	  400a81:       jl     400a61 <copy_vector+0x18>
+    0.00 :	  400a83:       mov    $0x1,%eax
+    0.00 :	  400a88:       pop    %rbp
+    0.00 :	  400a89:       retq
+ Percent |	Source code & Disassembly of libc-2.23.so for cycles:uppp (863 samples)
+---------------------------------------------------------------------------------------
+         :
+         :
+         :
+         :	Disassembly of section .text:
+         :
+         :	000000000003ac40 <random_r@@GLIBC_2.2.5>:
+    0.00 :	  3ac40:       test   %rdi,%rdi
+    0.00 :	  3ac43:       je     3acc0 <random_r@@GLIBC_2.2.5+0x80>
+    0.00 :	  3ac45:       test   %rsi,%rsi
+    0.00 :	  3ac48:       je     3acc0 <random_r@@GLIBC_2.2.5+0x80>
+   15.30 :	  3ac4a:       mov    0x18(%rdi),%eax
+    0.00 :	  3ac4d:       mov    0x10(%rdi),%r8
+    0.12 :	  3ac51:       test   %eax,%eax
+    0.00 :	  3ac53:       je     3aca0 <random_r@@GLIBC_2.2.5+0x60>
+    0.12 :	  3ac55:       mov    (%rdi),%rax
+   14.02 :	  3ac58:       mov    0x8(%rdi),%rcx
+    0.12 :	  3ac5c:       mov    0x28(%rdi),%r9
+    1.62 :	  3ac60:       mov    (%rcx),%edx
+    0.93 :	  3ac62:       add    (%rax),%edx
+   14.02 :	  3ac64:       add    $0x4,%rax
+    1.62 :	  3ac68:       mov    %edx,-0x4(%rax)
+    0.00 :	  3ac6b:       shr    %edx
+    0.00 :	  3ac6d:       cmp    %rax,%r9
+   12.98 :	  3ac70:       mov    %edx,(%rsi)
+    0.00 :	  3ac72:       lea    0x4(%rcx),%rdx
+    0.00 :	  3ac76:       jbe    3ac90 <random_r@@GLIBC_2.2.5+0x50>
+    0.00 :	  3ac78:       cmp    %rdx,%r9
+   14.25 :	  3ac7b:       mov    %rax,(%rdi)
+    0.00 :	  3ac7e:       cmovbe %r8,%rdx
+    0.00 :	  3ac82:       xor    %eax,%eax
+   12.05 :	  3ac84:       mov    %rdx,0x8(%rdi)
+    0.58 :	  3ac88:       retq
+    0.00 :	  3ac89:       nopl   0x0(%rax)
+    0.46 :	  3ac90:       mov    %r8,%rax
+    3.94 :	  3ac93:       mov    %rdx,0x8(%rdi)
+    0.58 :	  3ac97:       mov    %rax,(%rdi)
+    0.00 :	  3ac9a:       xor    %eax,%eax
+    7.30 :	  3ac9c:       retq
+    0.00 :	  3ac9d:       nopl   (%rax)
+    0.00 :	  3aca0:       imul   $0x41c64e6d,(%r8),%edx
+    0.00 :	  3aca7:       add    $0x3039,%edx
+    0.00 :	  3acad:       and    $0x7fffffff,%edx
+    0.00 :	  3acb3:       mov    %edx,(%r8)
+    0.00 :	  3acb6:       mov    %edx,(%rsi)
+    0.00 :	  3acb8:       retq
+    0.00 :	  3acb9:       nopl   0x0(%rax)
+    0.00 :	  3acc0:       mov    0x3891b1(%rip),%rax        # 3c3e78 <_IO_file_jumps@@GLIBC_2.2.5+0x798>
+    0.00 :	  3acc7:       movl   $0x16,%fs:(%rax)
+    0.00 :	  3acce:       mov    $0xffffffff,%eax
+    0.00 :	  3acd3:       retq
+ Percent |	Source code & Disassembly of libc-2.23.so for cycles:uppp (848 samples)
+---------------------------------------------------------------------------------------
+         :
+         :
+         :
+         :	Disassembly of section .text:
+         :
+         :	000000000003aac0 <random@@GLIBC_2.2.5>:
+    0.00 :	  3aac0:       sub    $0x18,%rsp
+    0.00 :	  3aac4:       mov    $0x1,%esi
+   14.39 :	  3aac9:       xor    %eax,%eax
+    0.00 :	  3aacb:       cmpl   $0x0,0x38ec6e(%rip)        # 3c9740 <argp_program_version_hook@@GLIBC_2.2.5+0x1e0>
+    0.12 :	  3aad2:       je     3aae0 <random@@GLIBC_2.2.5+0x20>
+    0.00 :	  3aad4:       lock cmpxchg %esi,0x38b9a4(%rip)        # 3c6480 <__abort_msg@@GLIBC_PRIVATE+0x8a0>
+    0.00 :	  3aadc:       jne    3aae9 <random@@GLIBC_2.2.5+0x29>
+    0.00 :	  3aade:       jmp    3ab03 <random@@GLIBC_2.2.5+0x43>
+   30.66 :	  3aae0:       cmpxchg %esi,0x38b999(%rip)        # 3c6480 <__abort_msg@@GLIBC_PRIVATE+0x8a0>
+    0.00 :	  3aae7:       je     3ab03 <random@@GLIBC_2.2.5+0x43>
+    0.00 :	  3aae9:       lea    0x38b990(%rip),%rdi        # 3c6480 <__abort_msg@@GLIBC_PRIVATE+0x8a0>
+    0.00 :	  3aaf0:       sub    $0x80,%rsp
+    0.00 :	  3aaf7:       callq  115080 <pthread_setcanceltype@@GLIBC_2.2.5+0x30>
+    0.00 :	  3aafc:       add    $0x80,%rsp
+    0.00 :	  3ab03:       lea    0x389b16(%rip),%rdi        # 3c4620 <__ctype_b@GLIBC_2.2.5+0x38>
+    0.00 :	  3ab0a:       lea    0xc(%rsp),%rsi
+   12.15 :	  3ab0f:       callq  3ac40 <random_r@@GLIBC_2.2.5>
+    0.00 :	  3ab14:       cmpl   $0x0,0x38ec25(%rip)        # 3c9740 <argp_program_version_hook@@GLIBC_2.2.5+0x1e0>
+   14.62 :	  3ab1b:       je     3ab28 <random@@GLIBC_2.2.5+0x68>
+    0.00 :	  3ab1d:       lock decl 0x38b95c(%rip)        # 3c6480 <__abort_msg@@GLIBC_PRIVATE+0x8a0>
+    0.00 :	  3ab24:       jne    3ab30 <random@@GLIBC_2.2.5+0x70>
+    0.00 :	  3ab26:       jmp    3ab4a <random@@GLIBC_2.2.5+0x8a>
+    0.00 :	  3ab28:       decl   0x38b952(%rip)        # 3c6480 <__abort_msg@@GLIBC_PRIVATE+0x8a0>
+   14.27 :	  3ab2e:       je     3ab4a <random@@GLIBC_2.2.5+0x8a>
+    0.00 :	  3ab30:       lea    0x38b949(%rip),%rdi        # 3c6480 <__abort_msg@@GLIBC_PRIVATE+0x8a0>
+    0.00 :	  3ab37:       sub    $0x80,%rsp
+    0.00 :	  3ab3e:       callq  1150b0 <pthread_setcanceltype@@GLIBC_2.2.5+0x60>
+    0.00 :	  3ab43:       add    $0x80,%rsp
+    1.18 :	  3ab4a:       movslq 0xc(%rsp),%rax
+    0.00 :	  3ab4f:       add    $0x18,%rsp
+   12.62 :	  3ab53:       retq
+ Percent |	Source code & Disassembly of sort for cycles:uppp (846 samples)
+-------------------------------------------------------------------------------
+         :
+         :
+         :
+         :	Disassembly of section .text:
+         :
+         :	0000000000400999 <ini_vector>:
+         :	ini_vector():
+    0.00 :	  400999:       push   %rbp
+    0.00 :	  40099a:       mov    %rsp,%rbp
+    0.00 :	  40099d:       sub    $0x20,%rsp
+    0.00 :	  4009a1:       mov    %rdi,-0x18(%rbp)
+    0.00 :	  4009a5:       mov    %esi,-0x1c(%rbp)
+    0.00 :	  4009a8:       mov    -0x1c(%rbp),%edx
+    0.00 :	  4009ab:       mov    -0x18(%rbp),%rax
+    0.00 :	  4009af:       mov    %edx,%esi
+    0.00 :	  4009b1:       mov    %rax,%rdi
+    0.00 :	  4009b4:       callq  400937 <alloc_vector>
+    0.00 :	  4009b9:       test   %eax,%eax
+    0.00 :	  4009bb:       jne    4009c4 <ini_vector+0x2b>
+    0.00 :	  4009bd:       mov    $0x0,%eax
+    0.00 :	  4009c2:       jmp    400a1a <ini_vector+0x81>
+    0.00 :	  4009c4:       movl   $0x0,-0xc(%rbp)
+    0.00 :	  4009cb:       mov    -0x18(%rbp),%rax
+    0.00 :	  4009cf:       mov    (%rax),%rax
+    0.00 :	  4009d2:       mov    %rax,-0x8(%rbp)
+    0.00 :	  4009d6:       jmp    400a0d <ini_vector+0x74>
+   14.78 :	  4009d8:       callq  400660 <rand@plt>
+    0.00 :	  4009dd:       mov    %eax,%ecx
+    0.00 :	  4009df:       mov    $0x55e63b89,%edx
+    0.00 :	  4009e4:       mov    %ecx,%eax
+   17.14 :	  4009e6:       imul   %edx
+    2.36 :	  4009e8:       sar    $0x19,%edx
+   14.07 :	  4009eb:       mov    %ecx,%eax
+    0.00 :	  4009ed:       sar    $0x1f,%eax
+    0.35 :	  4009f0:       sub    %eax,%edx
+    0.59 :	  4009f2:       mov    %edx,%eax
+   15.01 :	  4009f4:       imul   $0x5f5e100,%eax,%eax
+    2.13 :	  4009fa:       sub    %eax,%ecx
+    0.12 :	  4009fc:       mov    %ecx,%eax
+    0.00 :	  4009fe:       mov    -0x8(%rbp),%rdx
+   18.20 :	  400a02:       mov    %eax,(%rdx)
+    0.24 :	  400a04:       addl   $0x1,-0xc(%rbp)
+   13.24 :	  400a08:       addq   $0x4,-0x8(%rbp)
+    1.65 :	  400a0d:       mov    -0xc(%rbp),%eax
+    0.00 :	  400a10:       cmp    -0x1c(%rbp),%eax
+    0.12 :	  400a13:       jl     4009d8 <ini_vector+0x3f>
+    0.00 :	  400a15:       mov    $0x1,%eax
+    0.00 :	  400a1a:       leaveq
+    0.00 :	  400a1b:       retq
+ Percent |	Source code & Disassembly of libc-2.23.so for cycles:uppp (240 samples)
+---------------------------------------------------------------------------------------
+         :
+         :
+         :
+         :	Disassembly of section .text:
+         :
+         :	000000000003af60 <rand@@GLIBC_2.2.5>:
+    0.00 :	  3af60:       sub    $0x8,%rsp
+   47.50 :	  3af64:       callq  3aac0 <random@@GLIBC_2.2.5>
+    0.00 :	  3af69:       add    $0x8,%rsp
+   52.50 :	  3af6d:       retq
+ Percent |	Source code & Disassembly of sort for cycles:uppp (105 samples)
+-------------------------------------------------------------------------------
+         :
+         :
+         :
+         :	Disassembly of section .plt:
+         :
+         :	0000000000400660 <rand@plt>:
+  100.00 :	  400660:       jmpq   *0x2019ea(%rip)        # 602050 <_GLOBAL_OFFSET_TABLE_+0x50>
+    0.00 :	  400666:       pushq  $0x7
+    0.00 :	  40066b:       jmpq   4005e0 <_init+0x28>
+ Percent |	Source code & Disassembly of ld-2.23.so for cycles:uppp (1 samples)
+-----------------------------------------------------------------------------------
+         :
+         :
+         :
+         :	Disassembly of section .text:
+         :
+         :	0000000000000c30 <_dl_rtld_di_serinfo@@GLIBC_PRIVATE-0x8a20>:
+  100.00 :	  c30:       mov    %rsp,%rdi
+    0.00 :	  c33:       callq  19b0 <realloc@plt+0xf10>
+ Percent |	Source code & Disassembly of ld-2.23.so for cycles:uppp (1 samples)
+-----------------------------------------------------------------------------------
+         :
+         :
+         :
+         :	Disassembly of section .text:
+         :
+         :	000000000001a370 <realloc@@GLIBC_2.2.5+0x330>:
+  100.00 :	  1a370:       cmpb   $0x0,(%rsi)
+    0.00 :	  1a373:       je     1a3c8 <realloc@@GLIBC_2.2.5+0x388>
+    0.00 :	  1a375:       mov    (%rdi),%rax
+    0.00 :	  1a378:       test   %rax,%rax
+    0.00 :	  1a37b:       je     1a3b0 <realloc@@GLIBC_2.2.5+0x370>
+    0.00 :	  1a37d:       movzbl (%rax),%ecx
+    0.00 :	  1a380:       test   %cl,%cl
+    0.00 :	  1a382:       je     1a3c4 <realloc@@GLIBC_2.2.5+0x384>
+    0.00 :	  1a384:       mov    %rax,%r8
+    0.00 :	  1a387:       nopw   0x0(%rax,%rax,1)
+    0.00 :	  1a390:       mov    %rsi,%rdx
+    0.00 :	  1a393:       jmp    1a3a1 <realloc@@GLIBC_2.2.5+0x361>
+    0.00 :	  1a395:       nopl   (%rax)
+    0.00 :	  1a398:       add    $0x1,%rdx
+    0.00 :	  1a39c:       cmpb   $0x0,(%rdx)
+    0.00 :	  1a39f:       je     1a3b8 <realloc@@GLIBC_2.2.5+0x378>
+    0.00 :	  1a3a1:       cmp    %cl,(%rdx)
+    0.00 :	  1a3a3:       jne    1a398 <realloc@@GLIBC_2.2.5+0x358>
+    0.00 :	  1a3a5:       lea    0x1(%r8),%rdx
+    0.00 :	  1a3a9:       movb   $0x0,(%r8)
+    0.00 :	  1a3ad:       mov    %rdx,(%rdi)
+    0.00 :	  1a3b0:       repz retq
+    0.00 :	  1a3b2:       nopw   0x0(%rax,%rax,1)
+    0.00 :	  1a3b8:       add    $0x1,%r8
+    0.00 :	  1a3bc:       movzbl (%r8),%ecx
+    0.00 :	  1a3c0:       test   %cl,%cl
+    0.00 :	  1a3c2:       jne    1a390 <realloc@@GLIBC_2.2.5+0x350>
+    0.00 :	  1a3c4:       xor    %edx,%edx
+    0.00 :	  1a3c6:       jmp    1a3ad <realloc@@GLIBC_2.2.5+0x36d>
+    0.00 :	  1a3c8:       lea    0x8011(%rip),%rcx        # 223e0 <realloc@@GLIBC_2.2.5+0x83a0>
+    0.00 :	  1a3cf:       lea    0x5ed7(%rip),%rsi        # 202ad <realloc@@GLIBC_2.2.5+0x626d>
+    0.00 :	  1a3d6:       lea    0x5f0c(%rip),%rdi        # 202e9 <realloc@@GLIBC_2.2.5+0x62a9>
+    0.00 :	  1a3dd:       sub    $0x8,%rsp
+    0.00 :	  1a3e1:       mov    $0x162,%edx
+    0.00 :	  1a3e6:       callq  19ff0 <free@@GLIBC_2.2.5+0x160>

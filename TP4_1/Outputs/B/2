@@ -1,0 +1,24 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 1K of event 'cycles:uppp'
+# Event count (approx.): 45123349547
+#
+# Overhead       Samples  Command  Shared Object      Symbol                    
+# ........  ............  .......  .................  ..........................
+#
+    92.62%          1214  sort     sort               [.] sort2
+     1.57%            27  sort     sort               [.] copy_vector
+     1.31%            17  sort     libc-2.23.so       [.] __random
+     1.05%            16  sort     libc-2.23.so       [.] __random_r
+     1.01%            15  sort     sort               [.] ini_vector
+     0.97%             5  sort     sort               [.] rand@plt
+     0.74%            15  sort     [kernel.kallsyms]  [.] native_irq_return_iret
+     0.73%            11  sort     libc-2.23.so       [.] rand
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

@@ -1,0 +1,4368 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="2134" onload="init(evt)" viewBox="0 0 1200 2134" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+	}
+
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom();
+			zoom(target);
+		}
+		else if (e.target.id == "unzoom") unzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+	}, false)
+
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+		return;
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+
+		for (var x = txt.length - 2; x > 0; x--) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom() {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+		search();
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) {
+				currentSearchTerm = term;
+				search();
+			}
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (currentSearchTerm === null) return;
+		var term = currentSearchTerm;
+
+		var re = new RegExp(term, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="2134.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="2117" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="2117" > </text>
+<g id="frames">
+<g >
+<title>[Discord] (29 samples, 1.15%)</title><rect x="69.0" y="1941" width="13.6" height="15.0" fill="rgb(209,63,45)" rx="2" ry="2" />
+<text  x="72.05" y="1951.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="197" width="0.9" height="15.0" fill="rgb(205,102,0)" rx="2" ry="2" />
+<text  x="65.49" y="207.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.08%)</title><rect x="252.3" y="2005" width="0.9" height="15.0" fill="rgb(229,77,4)" rx="2" ry="2" />
+<text  x="255.28" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1813" width="0.9" height="15.0" fill="rgb(252,78,7)" rx="2" ry="2" />
+<text  x="65.49" y="1823.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="222.8" y="1797" width="0.4" height="15.0" fill="rgb(249,143,8)" rx="2" ry="2" />
+<text  x="225.76" y="1807.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1477" width="0.9" height="15.0" fill="rgb(242,223,37)" rx="2" ry="2" />
+<text  x="65.49" y="1487.5" ></text>
+</g>
+<g >
+<title>[chrome] (122 samples, 4.85%)</title><rect x="166.5" y="1877" width="57.2" height="15.0" fill="rgb(210,202,35)" rx="2" ry="2" />
+<text  x="169.52" y="1887.5" >[chrome]</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.384.130] (1 samples, 0.04%)</title><rect x="78.9" y="1701" width="0.5" height="15.0" fill="rgb(208,146,33)" rx="2" ry="2" />
+<text  x="81.89" y="1711.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="853" width="0.9" height="15.0" fill="rgb(227,0,43)" rx="2" ry="2" />
+<text  x="65.49" y="863.5" ></text>
+</g>
+<g >
+<title>[chrome] (125 samples, 4.96%)</title><rect x="165.6" y="1957" width="58.6" height="15.0" fill="rgb(209,46,33)" rx="2" ry="2" />
+<text  x="168.58" y="1967.5" >[chrome]</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.384.130] (4 samples, 0.16%)</title><rect x="249.5" y="2021" width="1.8" height="15.0" fill="rgb(229,85,17)" rx="2" ry="2" />
+<text  x="252.47" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (32 samples, 1.27%)</title><rect x="122.5" y="1973" width="15.0" height="15.0" fill="rgb(254,89,26)" rx="2" ry="2" />
+<text  x="125.47" y="1983.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1637" width="7.0" height="15.0" fill="rgb(243,32,27)" rx="2" ry="2" />
+<text  x="74.39" y="1647.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="565" width="0.9" height="15.0" fill="rgb(210,185,51)" rx="2" ry="2" />
+<text  x="65.49" y="575.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="2037" width="0.5" height="15.0" fill="rgb(250,124,33)" rx="2" ry="2" />
+<text  x="123.13" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="75.1" y="1333" width="3.3" height="15.0" fill="rgb(209,156,12)" rx="2" ry="2" />
+<text  x="78.14" y="1343.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="10.0" y="2037" width="0.5" height="15.0" fill="rgb(252,101,11)" rx="2" ry="2" />
+<text  x="13.00" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (6 samples, 0.24%)</title><rect x="30.6" y="1845" width="2.8" height="15.0" fill="rgb(251,78,20)" rx="2" ry="2" />
+<text  x="33.62" y="1855.5" ></text>
+</g>
+<g >
+<title>[Discord] (14 samples, 0.56%)</title><rect x="55.0" y="2037" width="6.5" height="15.0" fill="rgb(229,189,42)" rx="2" ry="2" />
+<text  x="57.99" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="35.3" y="1941" width="3.8" height="15.0" fill="rgb(250,40,30)" rx="2" ry="2" />
+<text  x="38.31" y="1951.5" ></text>
+</g>
+<g >
+<title>sort1 (1,028 samples, 40.83%)</title><rect x="704.5" y="1701" width="481.8" height="15.0" fill="rgb(209,6,38)" rx="2" ry="2" />
+<text  x="707.50" y="1711.5" >sort1</text>
+</g>
+<g >
+<title>g_mutex_lock (2 samples, 0.08%)</title><rect x="235.9" y="2053" width="0.9" height="15.0" fill="rgb(237,65,3)" rx="2" ry="2" />
+<text  x="238.88" y="2063.5" ></text>
+</g>
+<g >
+<title>sort1 (567 samples, 22.52%)</title><rect x="920.5" y="1557" width="265.8" height="15.0" fill="rgb(237,187,41)" rx="2" ry="2" />
+<text  x="923.54" y="1567.5" >sort1</text>
+</g>
+<g >
+<title>pa_hashmap_iterate (1 samples, 0.04%)</title><rect x="268.2" y="2037" width="0.5" height="15.0" fill="rgb(206,90,9)" rx="2" ry="2" />
+<text  x="271.21" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1461" width="0.9" height="15.0" fill="rgb(216,186,17)" rx="2" ry="2" />
+<text  x="65.49" y="1471.5" ></text>
+</g>
+<g >
+<title>[chrome] (7 samples, 0.28%)</title><rect x="131.8" y="1637" width="3.3" height="15.0" fill="rgb(207,84,51)" rx="2" ry="2" />
+<text  x="134.84" y="1647.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="26.4" y="1717" width="2.8" height="15.0" fill="rgb(211,202,16)" rx="2" ry="2" />
+<text  x="29.40" y="1727.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="85.0" y="2037" width="0.4" height="15.0" fill="rgb(229,166,25)" rx="2" ry="2" />
+<text  x="87.98" y="2047.5" ></text>
+</g>
+<g >
+<title>start_thread (32 samples, 1.27%)</title><rect x="10.5" y="2053" width="15.0" height="15.0" fill="rgb(244,210,0)" rx="2" ry="2" />
+<text  x="13.47" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="2005" width="0.5" height="15.0" fill="rgb(245,211,25)" rx="2" ry="2" />
+<text  x="123.13" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="117" width="0.9" height="15.0" fill="rgb(226,196,4)" rx="2" ry="2" />
+<text  x="65.49" y="127.5" ></text>
+</g>
+<g >
+<title>[Discord] (19 samples, 0.75%)</title><rect x="70.5" y="1749" width="8.9" height="15.0" fill="rgb(215,180,27)" rx="2" ry="2" />
+<text  x="73.45" y="1759.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (2 samples, 0.08%)</title><rect x="11.9" y="1941" width="0.9" height="15.0" fill="rgb(232,18,25)" rx="2" ry="2" />
+<text  x="14.87" y="1951.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="917" width="1.9" height="15.0" fill="rgb(212,2,6)" rx="2" ry="2" />
+<text  x="79.54" y="927.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1701" width="0.9" height="15.0" fill="rgb(247,29,46)" rx="2" ry="2" />
+<text  x="65.49" y="1711.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="565" width="1.9" height="15.0" fill="rgb(231,155,8)" rx="2" ry="2" />
+<text  x="79.54" y="575.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="121.5" y="1765" width="1.0" height="15.0" fill="rgb(219,110,5)" rx="2" ry="2" />
+<text  x="124.53" y="1775.5" ></text>
+</g>
+<g >
+<title>[Discord] (29 samples, 1.15%)</title><rect x="69.0" y="1909" width="13.6" height="15.0" fill="rgb(229,80,28)" rx="2" ry="2" />
+<text  x="72.05" y="1919.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="26.4" y="1797" width="3.3" height="15.0" fill="rgb(207,165,34)" rx="2" ry="2" />
+<text  x="29.40" y="1807.5" ></text>
+</g>
+<g >
+<title>rand (4 samples, 0.16%)</title><rect x="309.0" y="2005" width="1.9" height="15.0" fill="rgb(236,1,52)" rx="2" ry="2" />
+<text  x="311.98" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (25 samples, 0.99%)</title><rect x="203.5" y="1365" width="11.8" height="15.0" fill="rgb(242,56,14)" rx="2" ry="2" />
+<text  x="206.54" y="1375.5" ></text>
+</g>
+<g >
+<title>__libc_start_main (125 samples, 4.96%)</title><rect x="165.6" y="2037" width="58.6" height="15.0" fill="rgb(211,187,53)" rx="2" ry="2" />
+<text  x="168.58" y="2047.5" >__libc..</text>
+</g>
+<g >
+<title>[[vdso]] (1 samples, 0.04%)</title><rect x="25.5" y="2005" width="0.4" height="15.0" fill="rgb(222,11,38)" rx="2" ry="2" />
+<text  x="28.46" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="26.4" y="1813" width="3.3" height="15.0" fill="rgb(248,11,14)" rx="2" ry="2" />
+<text  x="29.40" y="1823.5" ></text>
+</g>
+<g >
+<title>[chrome] (58 samples, 2.30%)</title><rect x="190.4" y="1637" width="27.2" height="15.0" fill="rgb(238,169,0)" rx="2" ry="2" />
+<text  x="193.42" y="1647.5" >[..</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="741" width="0.9" height="15.0" fill="rgb(210,3,33)" rx="2" ry="2" />
+<text  x="65.49" y="751.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1733" width="0.5" height="15.0" fill="rgb(210,203,18)" rx="2" ry="2" />
+<text  x="88.92" y="1743.5" ></text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="1029" width="2.3" height="15.0" fill="rgb(244,175,43)" rx="2" ry="2" />
+<text  x="79.08" y="1039.5" ></text>
+</g>
+<g >
+<title>[Discord] (13 samples, 0.52%)</title><rect x="55.5" y="1845" width="6.0" height="15.0" fill="rgb(254,19,2)" rx="2" ry="2" />
+<text  x="58.46" y="1855.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="77.0" y="357" width="1.0" height="15.0" fill="rgb(215,3,22)" rx="2" ry="2" />
+<text  x="80.01" y="367.5" ></text>
+</g>
+<g >
+<title>sort1 (1,493 samples, 59.29%)</title><rect x="486.6" y="1861" width="699.7" height="15.0" fill="rgb(223,7,1)" rx="2" ry="2" />
+<text  x="489.59" y="1871.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (12 samples, 0.48%)</title><rect x="55.9" y="1813" width="5.6" height="15.0" fill="rgb(241,185,45)" rx="2" ry="2" />
+<text  x="58.93" y="1823.5" ></text>
+</g>
+<g >
+<title>start_thread (1 samples, 0.04%)</title><rect x="85.9" y="2053" width="0.5" height="15.0" fill="rgb(232,70,33)" rx="2" ry="2" />
+<text  x="88.92" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="581" width="0.9" height="15.0" fill="rgb(218,19,19)" rx="2" ry="2" />
+<text  x="65.49" y="591.5" ></text>
+</g>
+<g >
+<title>[Discord] (13 samples, 0.52%)</title><rect x="55.5" y="1973" width="6.0" height="15.0" fill="rgb(226,31,13)" rx="2" ry="2" />
+<text  x="58.46" y="1983.5" ></text>
+</g>
+<g >
+<title>cinnamon (44 samples, 1.75%)</title><rect x="238.7" y="2069" width="20.6" height="15.0" fill="rgb(243,88,47)" rx="2" ry="2" />
+<text  x="241.69" y="2079.5" ></text>
+</g>
+<g >
+<title>[libmozjs-38.so.0.0.0] (1 samples, 0.04%)</title><rect x="257.4" y="1973" width="0.5" height="15.0" fill="rgb(245,214,52)" rx="2" ry="2" />
+<text  x="260.43" y="1983.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1221" width="0.9" height="15.0" fill="rgb(252,100,48)" rx="2" ry="2" />
+<text  x="65.49" y="1231.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1909" width="1.9" height="15.0" fill="rgb(237,19,21)" rx="2" ry="2" />
+<text  x="123.60" y="1919.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1941" width="0.5" height="15.0" fill="rgb(215,163,5)" rx="2" ry="2" />
+<text  x="123.13" y="1951.5" ></text>
+</g>
+<g >
+<title>ServiceWorker_t (1 samples, 0.04%)</title><rect x="85.9" y="2069" width="0.5" height="15.0" fill="rgb(236,75,14)" rx="2" ry="2" />
+<text  x="88.92" y="2079.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1733" width="0.4" height="15.0" fill="rgb(231,86,22)" rx="2" ry="2" />
+<text  x="122.66" y="1743.5" ></text>
+</g>
+<g >
+<title>dbus_connection_get_dispatch_status (1 samples, 0.04%)</title><rect x="164.6" y="2021" width="0.5" height="15.0" fill="rgb(230,129,6)" rx="2" ry="2" />
+<text  x="167.65" y="2031.5" ></text>
+</g>
+<g >
+<title>[libxcb.so.1.1.0] (1 samples, 0.04%)</title><rect x="163.7" y="2053" width="0.5" height="15.0" fill="rgb(216,105,53)" rx="2" ry="2" />
+<text  x="166.71" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="35.3" y="2037" width="3.8" height="15.0" fill="rgb(226,226,30)" rx="2" ry="2" />
+<text  x="38.31" y="2047.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="10.9" y="1877" width="0.5" height="15.0" fill="rgb(209,49,6)" rx="2" ry="2" />
+<text  x="13.94" y="1887.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1621" width="7.0" height="15.0" fill="rgb(251,203,25)" rx="2" ry="2" />
+<text  x="74.39" y="1631.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="949" width="0.9" height="15.0" fill="rgb(248,27,49)" rx="2" ry="2" />
+<text  x="65.49" y="959.5" ></text>
+</g>
+<g >
+<title>[Discord] (10 samples, 0.40%)</title><rect x="73.7" y="1381" width="4.7" height="15.0" fill="rgb(250,188,29)" rx="2" ry="2" />
+<text  x="76.73" y="1391.5" ></text>
+</g>
+<g >
+<title>[chrome] (66 samples, 2.62%)</title><rect x="186.7" y="1669" width="30.9" height="15.0" fill="rgb(221,145,45)" rx="2" ry="2" />
+<text  x="189.67" y="1679.5" >[c..</text>
+</g>
+<g >
+<title>[chrome] (13 samples, 0.52%)</title><rect x="47.0" y="1781" width="6.1" height="15.0" fill="rgb(227,54,10)" rx="2" ry="2" />
+<text  x="50.02" y="1791.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="773" width="1.9" height="15.0" fill="rgb(220,145,33)" rx="2" ry="2" />
+<text  x="79.54" y="783.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="341" width="0.9" height="15.0" fill="rgb(239,130,43)" rx="2" ry="2" />
+<text  x="65.49" y="351.5" ></text>
+</g>
+<g >
+<title>pthread_mutex_lock (1 samples, 0.04%)</title><rect x="235.4" y="1925" width="0.5" height="15.0" fill="rgb(207,198,41)" rx="2" ry="2" />
+<text  x="238.41" y="1935.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="1941" width="3.8" height="15.0" fill="rgb(229,157,35)" rx="2" ry="2" />
+<text  x="28.93" y="1951.5" ></text>
+</g>
+<g >
+<title>[chrome] (13 samples, 0.52%)</title><rect x="47.0" y="1765" width="6.1" height="15.0" fill="rgb(210,82,6)" rx="2" ry="2" />
+<text  x="50.02" y="1775.5" ></text>
+</g>
+<g >
+<title>[chrome] (72 samples, 2.86%)</title><rect x="86.4" y="1925" width="33.7" height="15.0" fill="rgb(224,81,4)" rx="2" ry="2" />
+<text  x="89.39" y="1935.5" >[c..</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="821" width="0.9" height="15.0" fill="rgb(245,108,38)" rx="2" ry="2" />
+<text  x="65.49" y="831.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1893" width="1.9" height="15.0" fill="rgb(236,84,52)" rx="2" ry="2" />
+<text  x="123.60" y="1903.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="1189.5" y="2053" width="0.5" height="15.0" fill="rgb(230,177,28)" rx="2" ry="2" />
+<text  x="1192.53" y="2063.5" ></text>
+</g>
+<g >
+<title>sort1 (1,754 samples, 69.66%)</title><rect x="364.3" y="1957" width="822.0" height="15.0" fill="rgb(210,8,25)" rx="2" ry="2" />
+<text  x="367.28" y="1967.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1413" width="0.9" height="15.0" fill="rgb(239,131,17)" rx="2" ry="2" />
+<text  x="65.49" y="1423.5" ></text>
+</g>
+<g >
+<title>[libclutter-1.0.so.0.2400.2] (1 samples, 0.04%)</title><rect x="251.3" y="2005" width="0.5" height="15.0" fill="rgb(220,185,36)" rx="2" ry="2" />
+<text  x="254.34" y="2015.5" ></text>
+</g>
+<g >
+<title>__libc_start_main (29 samples, 1.15%)</title><rect x="69.0" y="2037" width="13.6" height="15.0" fill="rgb(222,57,41)" rx="2" ry="2" />
+<text  x="72.05" y="2047.5" ></text>
+</g>
+<g >
+<title>__strcmp_sse2_unaligned (1 samples, 0.04%)</title><rect x="260.7" y="2021" width="0.5" height="15.0" fill="rgb(239,150,18)" rx="2" ry="2" />
+<text  x="263.71" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="757" width="0.5" height="15.0" fill="rgb(227,63,9)" rx="2" ry="2" />
+<text  x="208.89" y="767.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="613" width="1.9" height="15.0" fill="rgb(221,81,45)" rx="2" ry="2" />
+<text  x="79.54" y="623.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="234.9" y="1861" width="0.5" height="15.0" fill="rgb(209,4,17)" rx="2" ry="2" />
+<text  x="237.94" y="1871.5" ></text>
+</g>
+<g >
+<title>[chrome] (7 samples, 0.28%)</title><rect x="131.8" y="1653" width="3.3" height="15.0" fill="rgb(241,127,12)" rx="2" ry="2" />
+<text  x="134.84" y="1663.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="77.0" y="309" width="1.0" height="15.0" fill="rgb(206,105,2)" rx="2" ry="2" />
+<text  x="80.01" y="319.5" ></text>
+</g>
+<g >
+<title>sort1 (371 samples, 14.73%)</title><rect x="1012.4" y="1493" width="173.9" height="15.0" fill="rgb(237,77,22)" rx="2" ry="2" />
+<text  x="1015.39" y="1503.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (10 samples, 0.40%)</title><rect x="56.9" y="1749" width="4.6" height="15.0" fill="rgb(216,212,19)" rx="2" ry="2" />
+<text  x="59.86" y="1759.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1653" width="0.4" height="15.0" fill="rgb(241,25,1)" rx="2" ry="2" />
+<text  x="122.66" y="1663.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1557" width="0.9" height="15.0" fill="rgb(224,104,40)" rx="2" ry="2" />
+<text  x="65.49" y="1567.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1189" width="0.9" height="15.0" fill="rgb(219,70,12)" rx="2" ry="2" />
+<text  x="65.49" y="1199.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="309" width="0.9" height="15.0" fill="rgb(231,145,19)" rx="2" ry="2" />
+<text  x="65.49" y="319.5" ></text>
+</g>
+<g >
+<title>[chrome] (8 samples, 0.32%)</title><rect x="48.9" y="1749" width="3.7" height="15.0" fill="rgb(219,106,29)" rx="2" ry="2" />
+<text  x="51.90" y="1759.5" ></text>
+</g>
+<g >
+<title>sort1 (1,160 samples, 46.07%)</title><rect x="642.6" y="1749" width="543.7" height="15.0" fill="rgb(229,6,12)" rx="2" ry="2" />
+<text  x="645.64" y="1759.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1797" width="0.4" height="15.0" fill="rgb(213,213,33)" rx="2" ry="2" />
+<text  x="122.66" y="1807.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="79.8" y="1557" width="0.5" height="15.0" fill="rgb(250,186,43)" rx="2" ry="2" />
+<text  x="82.83" y="1567.5" ></text>
+</g>
+<g >
+<title>[libmozjs-38.so.0.0.0] (1 samples, 0.04%)</title><rect x="257.4" y="1941" width="0.5" height="15.0" fill="rgb(223,112,46)" rx="2" ry="2" />
+<text  x="260.43" y="1951.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1157" width="0.9" height="15.0" fill="rgb(238,103,28)" rx="2" ry="2" />
+<text  x="65.49" y="1167.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="789" width="0.5" height="15.0" fill="rgb(224,86,4)" rx="2" ry="2" />
+<text  x="208.89" y="799.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="121.5" y="1781" width="1.0" height="15.0" fill="rgb(220,111,27)" rx="2" ry="2" />
+<text  x="124.53" y="1791.5" ></text>
+</g>
+<g >
+<title>[chrome] (29 samples, 1.15%)</title><rect x="123.9" y="1893" width="13.6" height="15.0" fill="rgb(221,12,31)" rx="2" ry="2" />
+<text  x="126.88" y="1903.5" ></text>
+</g>
+<g >
+<title>[chrome] (125 samples, 4.96%)</title><rect x="165.6" y="1925" width="58.6" height="15.0" fill="rgb(219,26,53)" rx="2" ry="2" />
+<text  x="168.58" y="1935.5" >[chrome]</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="32.0" y="1717" width="0.5" height="15.0" fill="rgb(239,51,4)" rx="2" ry="2" />
+<text  x="35.03" y="1727.5" ></text>
+</g>
+<g >
+<title>[chrome] (25 samples, 0.99%)</title><rect x="13.7" y="1957" width="11.8" height="15.0" fill="rgb(235,198,33)" rx="2" ry="2" />
+<text  x="16.75" y="1967.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="2005" width="0.5" height="15.0" fill="rgb(224,171,50)" rx="2" ry="2" />
+<text  x="88.92" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="84.0" y="1861" width="0.5" height="15.0" fill="rgb(225,103,53)" rx="2" ry="2" />
+<text  x="87.04" y="1871.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="597" width="1.9" height="15.0" fill="rgb(222,13,6)" rx="2" ry="2" />
+<text  x="79.54" y="607.5" ></text>
+</g>
+<g >
+<title>[chrome] (25 samples, 0.99%)</title><rect x="42.3" y="1845" width="11.8" height="15.0" fill="rgb(245,34,46)" rx="2" ry="2" />
+<text  x="45.34" y="1855.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1973" width="0.9" height="15.0" fill="rgb(216,131,3)" rx="2" ry="2" />
+<text  x="65.49" y="1983.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="805" width="0.9" height="15.0" fill="rgb(219,90,3)" rx="2" ry="2" />
+<text  x="65.49" y="815.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1877" width="0.5" height="15.0" fill="rgb(240,170,10)" rx="2" ry="2" />
+<text  x="123.13" y="1887.5" ></text>
+</g>
+<g >
+<title>[libcogl.so.20.4.1] (1 samples, 0.04%)</title><rect x="242.9" y="1989" width="0.5" height="15.0" fill="rgb(216,114,18)" rx="2" ry="2" />
+<text  x="245.91" y="1999.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="77.0" y="325" width="1.0" height="15.0" fill="rgb(208,188,34)" rx="2" ry="2" />
+<text  x="80.01" y="335.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="10.5" y="1925" width="0.9" height="15.0" fill="rgb(207,173,4)" rx="2" ry="2" />
+<text  x="13.47" y="1935.5" ></text>
+</g>
+<g >
+<title>pthread_mutex_unlock (1 samples, 0.04%)</title><rect x="233.1" y="1717" width="0.4" height="15.0" fill="rgb(215,113,47)" rx="2" ry="2" />
+<text  x="236.07" y="1727.5" ></text>
+</g>
+<g >
+<title>posix_memalign (1 samples, 0.04%)</title><rect x="52.6" y="1749" width="0.5" height="15.0" fill="rgb(224,31,28)" rx="2" ry="2" />
+<text  x="55.64" y="1759.5" ></text>
+</g>
+<g >
+<title>[libc-2.23.so] (1 samples, 0.04%)</title><rect x="11.4" y="1941" width="0.5" height="15.0" fill="rgb(211,141,2)" rx="2" ry="2" />
+<text  x="14.41" y="1951.5" ></text>
+</g>
+<g >
+<title>v8::internal::AstValueFactory::Internalize (1 samples, 0.04%)</title><rect x="79.8" y="1525" width="0.5" height="15.0" fill="rgb(210,149,25)" rx="2" ry="2" />
+<text  x="82.83" y="1535.5" ></text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="61.5" y="2037" width="1.0" height="15.0" fill="rgb(253,151,25)" rx="2" ry="2" />
+<text  x="64.55" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1653" width="7.0" height="15.0" fill="rgb(205,156,8)" rx="2" ry="2" />
+<text  x="74.39" y="1663.5" ></text>
+</g>
+<g >
+<title>[chrome] (29 samples, 1.15%)</title><rect x="40.5" y="1893" width="13.6" height="15.0" fill="rgb(241,43,54)" rx="2" ry="2" />
+<text  x="43.46" y="1903.5" ></text>
+</g>
+<g >
+<title>syscall_return_via_sysret (1 samples, 0.04%)</title><rect x="25.0" y="1941" width="0.5" height="15.0" fill="rgb(222,120,34)" rx="2" ry="2" />
+<text  x="28.00" y="1951.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="60.1" y="1669" width="1.4" height="15.0" fill="rgb(242,118,49)" rx="2" ry="2" />
+<text  x="63.14" y="1679.5" ></text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="981" width="2.3" height="15.0" fill="rgb(222,147,10)" rx="2" ry="2" />
+<text  x="79.08" y="991.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="83.1" y="1925" width="1.4" height="15.0" fill="rgb(215,147,0)" rx="2" ry="2" />
+<text  x="86.11" y="1935.5" ></text>
+</g>
+<g >
+<title>[Discord] (22 samples, 0.87%)</title><rect x="70.0" y="1797" width="10.3" height="15.0" fill="rgb(240,12,41)" rx="2" ry="2" />
+<text  x="72.98" y="1807.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="853" width="1.9" height="15.0" fill="rgb(238,22,47)" rx="2" ry="2" />
+<text  x="79.54" y="863.5" ></text>
+</g>
+<g >
+<title>__memcmp_sse4_1 (1 samples, 0.04%)</title><rect x="234.0" y="1797" width="0.5" height="15.0" fill="rgb(246,135,25)" rx="2" ry="2" />
+<text  x="237.00" y="1807.5" ></text>
+</g>
+<g >
+<title>[chrome] (14 samples, 0.56%)</title><rect x="16.1" y="1861" width="6.6" height="15.0" fill="rgb(250,88,50)" rx="2" ry="2" />
+<text  x="19.09" y="1871.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1925" width="0.5" height="15.0" fill="rgb(214,212,10)" rx="2" ry="2" />
+<text  x="123.13" y="1935.5" ></text>
+</g>
+<g >
+<title>sort1 (782 samples, 31.06%)</title><rect x="819.8" y="1621" width="366.5" height="15.0" fill="rgb(215,11,15)" rx="2" ry="2" />
+<text  x="822.79" y="1631.5" >sort1</text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="68.6" y="2037" width="0.4" height="15.0" fill="rgb(235,107,31)" rx="2" ry="2" />
+<text  x="71.58" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="837" width="1.9" height="15.0" fill="rgb(244,26,11)" rx="2" ry="2" />
+<text  x="79.54" y="847.5" ></text>
+</g>
+<g >
+<title>__getpagesize (1 samples, 0.04%)</title><rect x="84.0" y="1845" width="0.5" height="15.0" fill="rgb(212,217,30)" rx="2" ry="2" />
+<text  x="87.04" y="1855.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="773" width="0.9" height="15.0" fill="rgb(214,20,23)" rx="2" ry="2" />
+<text  x="65.49" y="783.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1109" width="0.5" height="15.0" fill="rgb(238,228,7)" rx="2" ry="2" />
+<text  x="208.89" y="1119.5" ></text>
+</g>
+<g >
+<title>[chrome] (72 samples, 2.86%)</title><rect x="86.4" y="1909" width="33.7" height="15.0" fill="rgb(220,27,46)" rx="2" ry="2" />
+<text  x="89.39" y="1919.5" >[c..</text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="205.4" y="1285" width="1.0" height="15.0" fill="rgb(205,110,21)" rx="2" ry="2" />
+<text  x="208.42" y="1295.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="1893" width="3.8" height="15.0" fill="rgb(244,227,25)" rx="2" ry="2" />
+<text  x="28.93" y="1903.5" ></text>
+</g>
+<g >
+<title>[chrome] (21 samples, 0.83%)</title><rect x="225.6" y="1909" width="9.8" height="15.0" fill="rgb(230,61,20)" rx="2" ry="2" />
+<text  x="228.57" y="1919.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="85.0" y="1973" width="0.4" height="15.0" fill="rgb(234,177,51)" rx="2" ry="2" />
+<text  x="87.98" y="1983.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (2 samples, 0.08%)</title><rect x="236.8" y="2053" width="1.0" height="15.0" fill="rgb(243,198,48)" rx="2" ry="2" />
+<text  x="239.81" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (28 samples, 1.11%)</title><rect x="202.1" y="1381" width="13.2" height="15.0" fill="rgb(254,126,27)" rx="2" ry="2" />
+<text  x="205.14" y="1391.5" ></text>
+</g>
+<g >
+<title>pthread_mutexattr_init (1 samples, 0.04%)</title><rect x="223.7" y="1877" width="0.5" height="15.0" fill="rgb(211,42,45)" rx="2" ry="2" />
+<text  x="226.69" y="1887.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="933" width="1.9" height="15.0" fill="rgb(211,78,33)" rx="2" ry="2" />
+<text  x="79.54" y="943.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1141" width="0.9" height="15.0" fill="rgb(243,19,13)" rx="2" ry="2" />
+<text  x="65.49" y="1151.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1013" width="0.9" height="15.0" fill="rgb(227,132,54)" rx="2" ry="2" />
+<text  x="65.49" y="1023.5" ></text>
+</g>
+<g >
+<title>[chrome] (115 samples, 4.57%)</title><rect x="169.3" y="1829" width="53.9" height="15.0" fill="rgb(227,47,45)" rx="2" ry="2" />
+<text  x="172.33" y="1839.5" >[chro..</text>
+</g>
+<g >
+<title>[chrome] (121 samples, 4.81%)</title><rect x="166.5" y="1861" width="56.7" height="15.0" fill="rgb(224,153,36)" rx="2" ry="2" />
+<text  x="169.52" y="1871.5" >[chrome]</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1765" width="0.9" height="15.0" fill="rgb(243,32,33)" rx="2" ry="2" />
+<text  x="65.49" y="1775.5" ></text>
+</g>
+<g >
+<title>[chrome] (3 samples, 0.12%)</title><rect x="204.9" y="1301" width="1.5" height="15.0" fill="rgb(251,1,28)" rx="2" ry="2" />
+<text  x="207.95" y="1311.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1589" width="7.0" height="15.0" fill="rgb(213,143,16)" rx="2" ry="2" />
+<text  x="74.39" y="1599.5" ></text>
+</g>
+<g >
+<title>[chrome] (14 samples, 0.56%)</title><rect x="228.4" y="1829" width="6.5" height="15.0" fill="rgb(228,145,54)" rx="2" ry="2" />
+<text  x="231.38" y="1839.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="10.5" y="1877" width="0.4" height="15.0" fill="rgb(250,223,9)" rx="2" ry="2" />
+<text  x="13.47" y="1887.5" ></text>
+</g>
+<g >
+<title>sort1 (197 samples, 7.82%)</title><rect x="1093.9" y="1429" width="92.4" height="15.0" fill="rgb(253,192,15)" rx="2" ry="2" />
+<text  x="1096.93" y="1439.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1717" width="0.9" height="15.0" fill="rgb(241,90,39)" rx="2" ry="2" />
+<text  x="65.49" y="1727.5" ></text>
+</g>
+<g >
+<title>v8::internal::compiler::Constant::ToDelayedStringConstant (1 samples, 0.04%)</title><rect x="63.0" y="37" width="0.4" height="15.0" fill="rgb(245,37,54)" rx="2" ry="2" />
+<text  x="65.95" y="47.5" ></text>
+</g>
+<g >
+<title>[chrome] (31 samples, 1.23%)</title><rect x="39.5" y="1925" width="14.6" height="15.0" fill="rgb(209,131,41)" rx="2" ry="2" />
+<text  x="42.52" y="1935.5" ></text>
+</g>
+<g >
+<title>pthread_mutex_lock (1 samples, 0.04%)</title><rect x="20.8" y="1749" width="0.4" height="15.0" fill="rgb(209,0,16)" rx="2" ry="2" />
+<text  x="23.78" y="1759.5" ></text>
+</g>
+<g >
+<title>copy_vector (27 samples, 1.07%)</title><rect x="284.1" y="2005" width="12.7" height="15.0" fill="rgb(223,202,0)" rx="2" ry="2" />
+<text  x="287.15" y="2015.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.08%)</title><rect x="262.1" y="2053" width="1.0" height="15.0" fill="rgb(223,81,5)" rx="2" ry="2" />
+<text  x="265.12" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (26 samples, 1.03%)</title><rect x="41.9" y="1861" width="12.2" height="15.0" fill="rgb(235,198,40)" rx="2" ry="2" />
+<text  x="44.87" y="1871.5" ></text>
+</g>
+<g >
+<title>[chrome] (12 samples, 0.48%)</title><rect x="130.9" y="1765" width="5.6" height="15.0" fill="rgb(240,55,45)" rx="2" ry="2" />
+<text  x="133.91" y="1775.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="160.0" y="1989" width="0.4" height="15.0" fill="rgb(215,2,18)" rx="2" ry="2" />
+<text  x="162.96" y="1999.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="741" width="1.9" height="15.0" fill="rgb(232,145,34)" rx="2" ry="2" />
+<text  x="79.54" y="751.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1861" width="1.9" height="15.0" fill="rgb(243,129,51)" rx="2" ry="2" />
+<text  x="123.60" y="1871.5" ></text>
+</g>
+<g >
+<title>syscall_return_via_sysret (1 samples, 0.04%)</title><rect x="237.8" y="2053" width="0.4" height="15.0" fill="rgb(205,90,37)" rx="2" ry="2" />
+<text  x="240.75" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1381" width="0.9" height="15.0" fill="rgb(241,123,53)" rx="2" ry="2" />
+<text  x="65.49" y="1391.5" ></text>
+</g>
+<g >
+<title>[libgdk-3.so.0.1800.9] (1 samples, 0.04%)</title><rect x="262.1" y="2021" width="0.5" height="15.0" fill="rgb(234,98,35)" rx="2" ry="2" />
+<text  x="265.12" y="2031.5" ></text>
+</g>
+<g >
+<title>__random (16 samples, 0.64%)</title><rect x="268.7" y="2005" width="7.5" height="15.0" fill="rgb(248,120,14)" rx="2" ry="2" />
+<text  x="271.68" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="52.2" y="1701" width="0.4" height="15.0" fill="rgb(215,94,3)" rx="2" ry="2" />
+<text  x="55.18" y="1711.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="76.5" y="421" width="1.5" height="15.0" fill="rgb(242,1,7)" rx="2" ry="2" />
+<text  x="79.54" y="431.5" ></text>
+</g>
+<g >
+<title>SGI_video_sync (1 samples, 0.04%)</title><rect x="85.4" y="2069" width="0.5" height="15.0" fill="rgb(243,101,20)" rx="2" ry="2" />
+<text  x="88.45" y="2079.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1189" width="0.5" height="15.0" fill="rgb(216,148,35)" rx="2" ry="2" />
+<text  x="208.89" y="1199.5" ></text>
+</g>
+<g >
+<title>sort1 (620 samples, 24.62%)</title><rect x="895.7" y="1573" width="290.6" height="15.0" fill="rgb(244,206,25)" rx="2" ry="2" />
+<text  x="898.70" y="1583.5" >sort1</text>
+</g>
+<g >
+<title>[perf-3363.map] (7 samples, 0.28%)</title><rect x="63.9" y="2053" width="3.3" height="15.0" fill="rgb(225,159,44)" rx="2" ry="2" />
+<text  x="66.89" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="82.6" y="2037" width="1.9" height="15.0" fill="rgb(232,44,13)" rx="2" ry="2" />
+<text  x="85.64" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1269" width="0.9" height="15.0" fill="rgb(214,12,38)" rx="2" ry="2" />
+<text  x="65.49" y="1279.5" ></text>
+</g>
+<g >
+<title>[chrome] (34 samples, 1.35%)</title><rect x="39.1" y="2021" width="15.9" height="15.0" fill="rgb(219,60,6)" rx="2" ry="2" />
+<text  x="42.05" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (9 samples, 0.36%)</title><rect x="18.0" y="1813" width="4.2" height="15.0" fill="rgb(229,115,39)" rx="2" ry="2" />
+<text  x="20.97" y="1823.5" ></text>
+</g>
+<g >
+<title>CompositorTileW (16 samples, 0.64%)</title><rect x="55.0" y="2069" width="7.5" height="15.0" fill="rgb(243,8,48)" rx="2" ry="2" />
+<text  x="57.99" y="2079.5" ></text>
+</g>
+<g >
+<title>free (125 samples, 4.96%)</title><rect x="165.6" y="2021" width="58.6" height="15.0" fill="rgb(209,28,15)" rx="2" ry="2" />
+<text  x="168.58" y="2031.5" >free</text>
+</g>
+<g >
+<title>[chrome] (30 samples, 1.19%)</title><rect x="40.0" y="1909" width="14.1" height="15.0" fill="rgb(209,115,42)" rx="2" ry="2" />
+<text  x="42.99" y="1919.5" ></text>
+</g>
+<g >
+<title>syscall_return_via_sysret (1 samples, 0.04%)</title><rect x="12.8" y="1941" width="0.5" height="15.0" fill="rgb(236,134,44)" rx="2" ry="2" />
+<text  x="15.81" y="1951.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="10.5" y="1973" width="2.8" height="15.0" fill="rgb(229,154,10)" rx="2" ry="2" />
+<text  x="13.47" y="1983.5" ></text>
+</g>
+<g >
+<title>[chrome] (26 samples, 1.03%)</title><rect x="13.3" y="2037" width="12.2" height="15.0" fill="rgb(241,95,13)" rx="2" ry="2" />
+<text  x="16.28" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1877" width="0.5" height="15.0" fill="rgb(227,87,39)" rx="2" ry="2" />
+<text  x="88.92" y="1887.5" ></text>
+</g>
+<g >
+<title>[libmozjs-38.so.0.0.0] (1 samples, 0.04%)</title><rect x="257.4" y="1957" width="0.5" height="15.0" fill="rgb(215,168,53)" rx="2" ry="2" />
+<text  x="260.43" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="2021" width="1.9" height="15.0" fill="rgb(252,7,11)" rx="2" ry="2" />
+<text  x="123.60" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (108 samples, 4.29%)</title><rect x="172.1" y="1797" width="50.7" height="15.0" fill="rgb(221,87,45)" rx="2" ry="2" />
+<text  x="175.14" y="1807.5" >[chro..</text>
+</g>
+<g >
+<title>[Discord] (19 samples, 0.75%)</title><rect x="70.5" y="1733" width="8.9" height="15.0" fill="rgb(212,84,12)" rx="2" ry="2" />
+<text  x="73.45" y="1743.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1189" width="2.8" height="15.0" fill="rgb(214,101,38)" rx="2" ry="2" />
+<text  x="78.61" y="1199.5" ></text>
+</g>
+<g >
+<title>sort1 (21 samples, 0.83%)</title><rect x="1176.4" y="1317" width="9.9" height="15.0" fill="rgb(238,107,27)" rx="2" ry="2" />
+<text  x="1179.41" y="1327.5" ></text>
+</g>
+<g >
+<title>sort1 (1,842 samples, 73.15%)</title><rect x="323.0" y="1989" width="863.3" height="15.0" fill="rgb(219,5,18)" rx="2" ry="2" />
+<text  x="326.04" y="1999.5" >sort1</text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="120.1" y="1797" width="0.5" height="15.0" fill="rgb(217,17,30)" rx="2" ry="2" />
+<text  x="123.13" y="1807.5" ></text>
+</g>
+<g >
+<title>Chrome_ChildIOT (32 samples, 1.27%)</title><rect x="10.5" y="2069" width="15.0" height="15.0" fill="rgb(230,50,44)" rx="2" ry="2" />
+<text  x="13.47" y="2079.5" ></text>
+</g>
+<g >
+<title>sort1 (1,443 samples, 57.31%)</title><rect x="510.0" y="1845" width="676.3" height="15.0" fill="rgb(228,215,3)" rx="2" ry="2" />
+<text  x="513.02" y="1855.5" >sort1</text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.384.130] (2 samples, 0.08%)</title><rect x="67.6" y="2037" width="1.0" height="15.0" fill="rgb(205,106,23)" rx="2" ry="2" />
+<text  x="70.64" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (25 samples, 0.99%)</title><rect x="69.0" y="1877" width="11.8" height="15.0" fill="rgb(243,19,30)" rx="2" ry="2" />
+<text  x="72.05" y="1887.5" ></text>
+</g>
+<g >
+<title>[chrome] (3 samples, 0.12%)</title><rect x="50.8" y="1637" width="1.4" height="15.0" fill="rgb(238,74,33)" rx="2" ry="2" />
+<text  x="53.77" y="1647.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="260.7" y="2037" width="0.5" height="15.0" fill="rgb(254,213,43)" rx="2" ry="2" />
+<text  x="263.71" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="205.4" y="1205" width="1.0" height="15.0" fill="rgb(211,141,43)" rx="2" ry="2" />
+<text  x="208.42" y="1215.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="10.5" y="2005" width="2.8" height="15.0" fill="rgb(243,221,26)" rx="2" ry="2" />
+<text  x="13.47" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1141" width="0.5" height="15.0" fill="rgb(234,65,9)" rx="2" ry="2" />
+<text  x="208.89" y="1151.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1493" width="0.9" height="15.0" fill="rgb(211,168,42)" rx="2" ry="2" />
+<text  x="65.49" y="1503.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (2 samples, 0.08%)</title><rect x="160.4" y="2037" width="1.0" height="15.0" fill="rgb(250,125,35)" rx="2" ry="2" />
+<text  x="163.43" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="965" width="0.9" height="15.0" fill="rgb(239,27,1)" rx="2" ry="2" />
+<text  x="65.49" y="975.5" ></text>
+</g>
+<g >
+<title>do_lookup_x (1 samples, 0.04%)</title><rect x="1186.3" y="2053" width="0.4" height="15.0" fill="rgb(244,207,18)" rx="2" ry="2" />
+<text  x="1189.25" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (7 samples, 0.28%)</title><rect x="230.3" y="1749" width="3.2" height="15.0" fill="rgb(249,139,1)" rx="2" ry="2" />
+<text  x="233.25" y="1759.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1781" width="0.5" height="15.0" fill="rgb(231,2,40)" rx="2" ry="2" />
+<text  x="88.92" y="1791.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.08%)</title><rect x="159.5" y="2021" width="0.9" height="15.0" fill="rgb(240,59,24)" rx="2" ry="2" />
+<text  x="162.49" y="2031.5" ></text>
+</g>
+<g >
+<title>Compositor (42 samples, 1.67%)</title><rect x="35.3" y="2069" width="19.7" height="15.0" fill="rgb(221,137,41)" rx="2" ry="2" />
+<text  x="38.31" y="2079.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1877" width="1.9" height="15.0" fill="rgb(240,127,16)" rx="2" ry="2" />
+<text  x="123.60" y="1887.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="805" width="1.9" height="15.0" fill="rgb(241,0,3)" rx="2" ry="2" />
+<text  x="79.54" y="815.5" ></text>
+</g>
+<g >
+<title>[libxcb.so.1.1.0] (1 samples, 0.04%)</title><rect x="240.1" y="2053" width="0.5" height="15.0" fill="rgb(206,91,8)" rx="2" ry="2" />
+<text  x="243.10" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (5 samples, 0.20%)</title><rect x="1186.7" y="2053" width="2.4" height="15.0" fill="rgb(213,106,7)" rx="2" ry="2" />
+<text  x="1189.72" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (96 samples, 3.81%)</title><rect x="174.0" y="1781" width="45.0" height="15.0" fill="rgb(209,163,36)" rx="2" ry="2" />
+<text  x="177.02" y="1791.5" >[chr..</text>
+</g>
+<g >
+<title>[chrome] (12 samples, 0.48%)</title><rect x="29.7" y="1989" width="5.6" height="15.0" fill="rgb(243,26,9)" rx="2" ry="2" />
+<text  x="32.68" y="1999.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1013" width="0.5" height="15.0" fill="rgb(246,143,24)" rx="2" ry="2" />
+<text  x="208.89" y="1023.5" ></text>
+</g>
+<g >
+<title>[chrome] (17 samples, 0.68%)</title><rect x="227.0" y="1845" width="7.9" height="15.0" fill="rgb(242,108,37)" rx="2" ry="2" />
+<text  x="229.97" y="1855.5" ></text>
+</g>
+<g >
+<title>[perf-3795.map] (1 samples, 0.04%)</title><rect x="217.6" y="1557" width="0.5" height="15.0" fill="rgb(241,210,15)" rx="2" ry="2" />
+<text  x="220.60" y="1567.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="160.0" y="2005" width="0.4" height="15.0" fill="rgb(242,21,52)" rx="2" ry="2" />
+<text  x="162.96" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="57.8" y="1717" width="3.7" height="15.0" fill="rgb(214,219,12)" rx="2" ry="2" />
+<text  x="60.80" y="1727.5" ></text>
+</g>
+<g >
+<title>sort1 (73 samples, 2.90%)</title><rect x="1152.0" y="1365" width="34.3" height="15.0" fill="rgb(236,102,31)" rx="2" ry="2" />
+<text  x="1155.04" y="1375.5" >so..</text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned (1 samples, 0.04%)</title><rect x="233.5" y="1781" width="0.5" height="15.0" fill="rgb(248,56,20)" rx="2" ry="2" />
+<text  x="236.53" y="1791.5" ></text>
+</g>
+<g >
+<title>cogl_framebuffer_get_modelview_matrix (1 samples, 0.04%)</title><rect x="254.2" y="2037" width="0.4" height="15.0" fill="rgb(233,216,52)" rx="2" ry="2" />
+<text  x="257.15" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1509" width="7.0" height="15.0" fill="rgb(232,107,36)" rx="2" ry="2" />
+<text  x="74.39" y="1519.5" ></text>
+</g>
+<g >
+<title>gdbus (3 samples, 0.12%)</title><rect x="260.7" y="2069" width="1.4" height="15.0" fill="rgb(233,8,14)" rx="2" ry="2" />
+<text  x="263.71" y="2079.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1845" width="0.5" height="15.0" fill="rgb(250,49,43)" rx="2" ry="2" />
+<text  x="88.92" y="1855.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1957" width="0.5" height="15.0" fill="rgb(217,153,27)" rx="2" ry="2" />
+<text  x="123.13" y="1967.5" ></text>
+</g>
+<g >
+<title>VizCompositorTh (36 samples, 1.43%)</title><rect x="120.6" y="2069" width="16.9" height="15.0" fill="rgb(235,131,30)" rx="2" ry="2" />
+<text  x="123.60" y="2079.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="59.7" y="1685" width="1.8" height="15.0" fill="rgb(240,145,47)" rx="2" ry="2" />
+<text  x="62.67" y="1695.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1813" width="1.9" height="15.0" fill="rgb(249,134,1)" rx="2" ry="2" />
+<text  x="123.60" y="1823.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="1925" width="3.8" height="15.0" fill="rgb(219,98,50)" rx="2" ry="2" />
+<text  x="28.93" y="1935.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1813" width="0.4" height="15.0" fill="rgb(253,43,34)" rx="2" ry="2" />
+<text  x="122.66" y="1823.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="79.4" y="1637" width="0.9" height="15.0" fill="rgb(241,222,43)" rx="2" ry="2" />
+<text  x="82.36" y="1647.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="2005" width="3.8" height="15.0" fill="rgb(212,10,41)" rx="2" ry="2" />
+<text  x="28.93" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1669" width="0.4" height="15.0" fill="rgb(215,128,27)" rx="2" ry="2" />
+<text  x="122.66" y="1679.5" ></text>
+</g>
+<g >
+<title>dbus-daemon (1 samples, 0.04%)</title><rect x="260.2" y="2069" width="0.5" height="15.0" fill="rgb(233,51,31)" rx="2" ry="2" />
+<text  x="263.25" y="2079.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1813" width="0.5" height="15.0" fill="rgb(228,226,45)" rx="2" ry="2" />
+<text  x="65.02" y="1823.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="79.4" y="1717" width="0.9" height="15.0" fill="rgb(233,132,10)" rx="2" ry="2" />
+<text  x="82.36" y="1727.5" ></text>
+</g>
+<g >
+<title>[chrome] (32 samples, 1.27%)</title><rect x="122.5" y="2037" width="15.0" height="15.0" fill="rgb(238,124,36)" rx="2" ry="2" />
+<text  x="125.47" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="2021" width="0.5" height="15.0" fill="rgb(246,4,44)" rx="2" ry="2" />
+<text  x="88.92" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="789" width="0.9" height="15.0" fill="rgb(254,136,0)" rx="2" ry="2" />
+<text  x="65.49" y="799.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="79.4" y="1685" width="0.9" height="15.0" fill="rgb(237,100,39)" rx="2" ry="2" />
+<text  x="82.36" y="1695.5" ></text>
+</g>
+<g >
+<title>sort1 (517 samples, 20.53%)</title><rect x="944.0" y="1541" width="242.3" height="15.0" fill="rgb(208,11,37)" rx="2" ry="2" />
+<text  x="946.97" y="1551.5" >sort1</text>
+</g>
+<g >
+<title>free (1 samples, 0.04%)</title><rect x="217.1" y="1525" width="0.5" height="15.0" fill="rgb(208,50,15)" rx="2" ry="2" />
+<text  x="220.13" y="1535.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="160.0" y="1941" width="0.4" height="15.0" fill="rgb(227,127,0)" rx="2" ry="2" />
+<text  x="162.96" y="1951.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="22.7" y="1877" width="0.4" height="15.0" fill="rgb(212,214,7)" rx="2" ry="2" />
+<text  x="25.65" y="1887.5" ></text>
+</g>
+<g >
+<title>[chrome] (31 samples, 1.23%)</title><rect x="122.9" y="1909" width="14.6" height="15.0" fill="rgb(237,18,52)" rx="2" ry="2" />
+<text  x="125.94" y="1919.5" ></text>
+</g>
+<g >
+<title>[unknown] (3 samples, 0.12%)</title><rect x="164.2" y="2037" width="1.4" height="15.0" fill="rgb(213,113,15)" rx="2" ry="2" />
+<text  x="167.18" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (21 samples, 0.83%)</title><rect x="225.6" y="1925" width="9.8" height="15.0" fill="rgb(229,132,36)" rx="2" ry="2" />
+<text  x="228.57" y="1935.5" ></text>
+</g>
+<g >
+<title>[libcogl.so.20.4.1] (1 samples, 0.04%)</title><rect x="242.4" y="2005" width="0.5" height="15.0" fill="rgb(220,107,47)" rx="2" ry="2" />
+<text  x="245.44" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (8 samples, 0.32%)</title><rect x="229.8" y="1781" width="3.7" height="15.0" fill="rgb(247,61,15)" rx="2" ry="2" />
+<text  x="232.79" y="1791.5" ></text>
+</g>
+<g >
+<title>[chrome] (19 samples, 0.75%)</title><rect x="14.2" y="1941" width="8.9" height="15.0" fill="rgb(232,131,11)" rx="2" ry="2" />
+<text  x="17.22" y="1951.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="160.0" y="1925" width="0.4" height="15.0" fill="rgb(235,94,20)" rx="2" ry="2" />
+<text  x="162.96" y="1935.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="1973" width="3.8" height="15.0" fill="rgb(235,76,40)" rx="2" ry="2" />
+<text  x="28.93" y="1983.5" ></text>
+</g>
+<g >
+<title>g_main_context_prepare (1 samples, 0.04%)</title><rect x="165.1" y="2021" width="0.5" height="15.0" fill="rgb(242,180,18)" rx="2" ry="2" />
+<text  x="168.12" y="2031.5" ></text>
+</g>
+<g >
+<title>[unknown] (1,958 samples, 77.76%)</title><rect x="268.7" y="2053" width="917.6" height="15.0" fill="rgb(225,167,13)" rx="2" ry="2" />
+<text  x="271.68" y="2063.5" >[unknown]</text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1941" width="1.9" height="15.0" fill="rgb(223,221,16)" rx="2" ry="2" />
+<text  x="123.60" y="1951.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1061" width="0.5" height="15.0" fill="rgb(228,161,37)" rx="2" ry="2" />
+<text  x="208.89" y="1071.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="83.1" y="1941" width="1.4" height="15.0" fill="rgb(207,37,2)" rx="2" ry="2" />
+<text  x="86.11" y="1951.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="32.0" y="1685" width="0.5" height="15.0" fill="rgb(223,66,22)" rx="2" ry="2" />
+<text  x="35.03" y="1695.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="149" width="0.9" height="15.0" fill="rgb(254,188,14)" rx="2" ry="2" />
+<text  x="65.49" y="159.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="725" width="0.9" height="15.0" fill="rgb(228,165,27)" rx="2" ry="2" />
+<text  x="65.49" y="735.5" ></text>
+</g>
+<g >
+<title>sort1 (160 samples, 6.35%)</title><rect x="1111.3" y="1413" width="75.0" height="15.0" fill="rgb(216,71,26)" rx="2" ry="2" />
+<text  x="1114.27" y="1423.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (35 samples, 1.39%)</title><rect x="199.8" y="1445" width="16.4" height="15.0" fill="rgb(216,229,22)" rx="2" ry="2" />
+<text  x="202.79" y="1455.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="35.3" y="1909" width="3.8" height="15.0" fill="rgb(240,155,1)" rx="2" ry="2" />
+<text  x="38.31" y="1919.5" ></text>
+</g>
+<g >
+<title>cairo_region_get_extents (1 samples, 0.04%)</title><rect x="252.7" y="1989" width="0.5" height="15.0" fill="rgb(234,143,31)" rx="2" ry="2" />
+<text  x="255.75" y="1999.5" ></text>
+</g>
+<g >
+<title>sort1 (1 samples, 0.04%)</title><rect x="1185.8" y="1173" width="0.5" height="15.0" fill="rgb(207,109,36)" rx="2" ry="2" />
+<text  x="1188.78" y="1183.5" ></text>
+</g>
+<g >
+<title>[chrome] (7 samples, 0.28%)</title><rect x="230.3" y="1765" width="3.2" height="15.0" fill="rgb(233,179,3)" rx="2" ry="2" />
+<text  x="233.25" y="1775.5" ></text>
+</g>
+<g >
+<title>[chrome] (118 samples, 4.69%)</title><rect x="167.9" y="1845" width="55.3" height="15.0" fill="rgb(212,198,1)" rx="2" ry="2" />
+<text  x="170.93" y="1855.5" >[chro..</text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="757" width="1.9" height="15.0" fill="rgb(253,120,15)" rx="2" ry="2" />
+<text  x="79.54" y="767.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="215.3" y="1381" width="0.4" height="15.0" fill="rgb(246,219,37)" rx="2" ry="2" />
+<text  x="218.26" y="1391.5" ></text>
+</g>
+<g >
+<title>sort1 (881 samples, 34.99%)</title><rect x="773.4" y="1653" width="412.9" height="15.0" fill="rgb(252,46,51)" rx="2" ry="2" />
+<text  x="776.39" y="1663.5" >sort1</text>
+</g>
+<g >
+<title>native_irq_return_iret (2 samples, 0.08%)</title><rect x="264.9" y="1941" width="1.0" height="15.0" fill="rgb(210,156,35)" rx="2" ry="2" />
+<text  x="267.93" y="1951.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.08%)</title><rect x="242.4" y="2021" width="1.0" height="15.0" fill="rgb(230,169,24)" rx="2" ry="2" />
+<text  x="245.44" y="2031.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.384.130] (5 samples, 0.20%)</title><rect x="243.4" y="2037" width="2.3" height="15.0" fill="rgb(234,18,40)" rx="2" ry="2" />
+<text  x="246.38" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="77.0" y="277" width="1.0" height="15.0" fill="rgb(207,146,37)" rx="2" ry="2" />
+<text  x="80.01" y="287.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.08%)</title><rect x="21.2" y="1781" width="1.0" height="15.0" fill="rgb(211,194,10)" rx="2" ry="2" />
+<text  x="24.25" y="1791.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="773" width="0.5" height="15.0" fill="rgb(215,214,13)" rx="2" ry="2" />
+<text  x="208.89" y="783.5" ></text>
+</g>
+<g >
+<title>__libc_start_main (4 samples, 0.16%)</title><rect x="266.3" y="2053" width="1.9" height="15.0" fill="rgb(220,88,5)" rx="2" ry="2" />
+<text  x="269.34" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1685" width="0.9" height="15.0" fill="rgb(227,7,19)" rx="2" ry="2" />
+<text  x="65.49" y="1695.5" ></text>
+</g>
+<g >
+<title>sort1 (1,113 samples, 44.20%)</title><rect x="664.7" y="1733" width="521.6" height="15.0" fill="rgb(247,0,13)" rx="2" ry="2" />
+<text  x="667.67" y="1743.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="101" width="0.9" height="15.0" fill="rgb(250,30,50)" rx="2" ry="2" />
+<text  x="65.49" y="111.5" ></text>
+</g>
+<g >
+<title>pthread_condattr_init (1 samples, 0.04%)</title><rect x="223.2" y="1861" width="0.5" height="15.0" fill="rgb(229,215,9)" rx="2" ry="2" />
+<text  x="226.22" y="1871.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="885" width="1.9" height="15.0" fill="rgb(242,148,49)" rx="2" ry="2" />
+<text  x="79.54" y="895.5" ></text>
+</g>
+<g >
+<title>[libgirepository-1.0.so.1.0.0] (1 samples, 0.04%)</title><rect x="239.6" y="2053" width="0.5" height="15.0" fill="rgb(248,115,23)" rx="2" ry="2" />
+<text  x="242.63" y="2063.5" ></text>
+</g>
+<g >
+<title>g_type_check_instance_is_fundamentally_a (1 samples, 0.04%)</title><rect x="259.3" y="2005" width="0.5" height="15.0" fill="rgb(247,7,53)" rx="2" ry="2" />
+<text  x="262.31" y="2015.5" ></text>
+</g>
+<g >
+<title>[perf-2330.map] (1 samples, 0.04%)</title><rect x="257.4" y="1925" width="0.5" height="15.0" fill="rgb(250,199,32)" rx="2" ry="2" />
+<text  x="260.43" y="1935.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="76.5" y="485" width="1.5" height="15.0" fill="rgb(206,169,29)" rx="2" ry="2" />
+<text  x="79.54" y="495.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="181" width="0.9" height="15.0" fill="rgb(248,183,42)" rx="2" ry="2" />
+<text  x="65.49" y="191.5" ></text>
+</g>
+<g >
+<title>[chrome] (13 samples, 0.52%)</title><rect x="228.8" y="1813" width="6.1" height="15.0" fill="rgb(252,70,37)" rx="2" ry="2" />
+<text  x="231.85" y="1823.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1749" width="0.4" height="15.0" fill="rgb(243,36,29)" rx="2" ry="2" />
+<text  x="122.66" y="1759.5" ></text>
+</g>
+<g >
+<title>_int_malloc (1 samples, 0.04%)</title><rect x="261.2" y="2053" width="0.5" height="15.0" fill="rgb(250,169,12)" rx="2" ry="2" />
+<text  x="264.18" y="2063.5" ></text>
+</g>
+<g >
+<title>sort1 (333 samples, 13.22%)</title><rect x="1030.2" y="1477" width="156.1" height="15.0" fill="rgb(243,156,6)" rx="2" ry="2" />
+<text  x="1033.20" y="1487.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="77.5" y="261" width="0.5" height="15.0" fill="rgb(240,117,24)" rx="2" ry="2" />
+<text  x="80.48" y="271.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned (3 samples, 0.12%)</title><rect x="135.1" y="1669" width="1.4" height="15.0" fill="rgb(246,48,53)" rx="2" ry="2" />
+<text  x="138.12" y="1679.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (2 samples, 0.08%)</title><rect x="266.8" y="1973" width="0.9" height="15.0" fill="rgb(239,112,6)" rx="2" ry="2" />
+<text  x="269.81" y="1983.5" ></text>
+</g>
+<g >
+<title>start_thread (20 samples, 0.79%)</title><rect x="25.9" y="2053" width="9.4" height="15.0" fill="rgb(216,13,43)" rx="2" ry="2" />
+<text  x="28.93" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (12 samples, 0.48%)</title><rect x="130.9" y="1749" width="5.6" height="15.0" fill="rgb(220,99,32)" rx="2" ry="2" />
+<text  x="133.91" y="1759.5" ></text>
+</g>
+<g >
+<title>sort1 (245 samples, 9.73%)</title><rect x="1071.4" y="1445" width="114.9" height="15.0" fill="rgb(232,160,50)" rx="2" ry="2" />
+<text  x="1074.44" y="1455.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="677" width="0.9" height="15.0" fill="rgb(243,18,15)" rx="2" ry="2" />
+<text  x="65.49" y="687.5" ></text>
+</g>
+<g >
+<title>[perf] (5 samples, 0.20%)</title><rect x="264.0" y="2005" width="2.3" height="15.0" fill="rgb(207,158,35)" rx="2" ry="2" />
+<text  x="267.00" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1829" width="0.5" height="15.0" fill="rgb(235,153,9)" rx="2" ry="2" />
+<text  x="123.13" y="1839.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="597" width="0.9" height="15.0" fill="rgb(229,19,6)" rx="2" ry="2" />
+<text  x="65.49" y="607.5" ></text>
+</g>
+<g >
+<title>clutter_actor_get_first_child (1 samples, 0.04%)</title><rect x="253.2" y="2005" width="0.5" height="15.0" fill="rgb(208,92,52)" rx="2" ry="2" />
+<text  x="256.22" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (23 samples, 0.91%)</title><rect x="225.1" y="2037" width="10.8" height="15.0" fill="rgb(251,100,5)" rx="2" ry="2" />
+<text  x="228.10" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="82.6" y="2021" width="1.9" height="15.0" fill="rgb(205,216,6)" rx="2" ry="2" />
+<text  x="85.64" y="2031.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="85.0" y="1957" width="0.4" height="15.0" fill="rgb(219,138,21)" rx="2" ry="2" />
+<text  x="87.98" y="1967.5" ></text>
+</g>
+<g >
+<title>[chrome] (125 samples, 4.96%)</title><rect x="165.6" y="1941" width="58.6" height="15.0" fill="rgb(205,124,18)" rx="2" ry="2" />
+<text  x="168.58" y="1951.5" >[chrome]</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1237" width="0.9" height="15.0" fill="rgb(246,184,48)" rx="2" ry="2" />
+<text  x="65.49" y="1247.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="2037" width="0.5" height="15.0" fill="rgb(227,212,39)" rx="2" ry="2" />
+<text  x="88.92" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1781" width="0.5" height="15.0" fill="rgb(218,30,7)" rx="2" ry="2" />
+<text  x="65.02" y="1791.5" ></text>
+</g>
+<g >
+<title>[chrome] (7 samples, 0.28%)</title><rect x="230.3" y="1733" width="3.2" height="15.0" fill="rgb(239,60,37)" rx="2" ry="2" />
+<text  x="233.25" y="1743.5" ></text>
+</g>
+<g >
+<title>sort1 (928 samples, 36.85%)</title><rect x="751.4" y="1669" width="434.9" height="15.0" fill="rgb(229,165,5)" rx="2" ry="2" />
+<text  x="754.37" y="1679.5" >sort1</text>
+</g>
+<g >
+<title>g_hash_table_lookup (1 samples, 0.04%)</title><rect x="255.6" y="2037" width="0.4" height="15.0" fill="rgb(237,212,37)" rx="2" ry="2" />
+<text  x="258.56" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (9 samples, 0.36%)</title><rect x="74.2" y="1349" width="4.2" height="15.0" fill="rgb(233,229,5)" rx="2" ry="2" />
+<text  x="77.20" y="1359.5" ></text>
+</g>
+<g >
+<title>[chrome] (13 samples, 0.52%)</title><rect x="114.0" y="1861" width="6.1" height="15.0" fill="rgb(231,211,14)" rx="2" ry="2" />
+<text  x="117.03" y="1871.5" ></text>
+</g>
+<g >
+<title>[chrome] (12 samples, 0.48%)</title><rect x="29.7" y="2021" width="5.6" height="15.0" fill="rgb(224,146,51)" rx="2" ry="2" />
+<text  x="32.68" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="26.4" y="1781" width="3.3" height="15.0" fill="rgb(226,81,48)" rx="2" ry="2" />
+<text  x="29.40" y="1791.5" ></text>
+</g>
+<g >
+<title>[chrome] (34 samples, 1.35%)</title><rect x="39.1" y="1957" width="15.9" height="15.0" fill="rgb(221,26,54)" rx="2" ry="2" />
+<text  x="42.05" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1541" width="0.9" height="15.0" fill="rgb(226,25,16)" rx="2" ry="2" />
+<text  x="65.49" y="1551.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="35.3" y="1925" width="3.8" height="15.0" fill="rgb(214,211,0)" rx="2" ry="2" />
+<text  x="38.31" y="1935.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="437" width="0.9" height="15.0" fill="rgb(247,8,8)" rx="2" ry="2" />
+<text  x="65.49" y="447.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="2005" width="0.9" height="15.0" fill="rgb(211,126,8)" rx="2" ry="2" />
+<text  x="65.49" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="709" width="0.9" height="15.0" fill="rgb(254,103,0)" rx="2" ry="2" />
+<text  x="65.49" y="719.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="19.8" y="1717" width="0.5" height="15.0" fill="rgb(216,5,0)" rx="2" ry="2" />
+<text  x="22.84" y="1727.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1877" width="0.5" height="15.0" fill="rgb(212,174,25)" rx="2" ry="2" />
+<text  x="65.02" y="1887.5" ></text>
+</g>
+<g >
+<title>sort1 (4 samples, 0.16%)</title><rect x="1184.4" y="1253" width="1.9" height="15.0" fill="rgb(206,25,17)" rx="2" ry="2" />
+<text  x="1187.38" y="1263.5" ></text>
+</g>
+<g >
+<title>JS_CallFunctionValue@plt (1 samples, 0.04%)</title><rect x="241.5" y="2037" width="0.5" height="15.0" fill="rgb(207,155,26)" rx="2" ry="2" />
+<text  x="244.50" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (13 samples, 0.52%)</title><rect x="55.5" y="1957" width="6.0" height="15.0" fill="rgb(208,208,15)" rx="2" ry="2" />
+<text  x="58.46" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="84.0" y="1893" width="0.5" height="15.0" fill="rgb(251,172,11)" rx="2" ry="2" />
+<text  x="87.04" y="1903.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1429" width="0.9" height="15.0" fill="rgb(248,140,20)" rx="2" ry="2" />
+<text  x="65.49" y="1439.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="35.3" y="1989" width="3.8" height="15.0" fill="rgb(218,41,39)" rx="2" ry="2" />
+<text  x="38.31" y="1999.5" ></text>
+</g>
+<g >
+<title>_fini (1 samples, 0.04%)</title><rect x="78.4" y="1685" width="0.5" height="15.0" fill="rgb(247,229,3)" rx="2" ry="2" />
+<text  x="81.42" y="1695.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="79.4" y="1653" width="0.9" height="15.0" fill="rgb(248,121,23)" rx="2" ry="2" />
+<text  x="82.36" y="1663.5" ></text>
+</g>
+<g >
+<title>csd-power (2 samples, 0.08%)</title><rect x="259.3" y="2069" width="0.9" height="15.0" fill="rgb(207,208,40)" rx="2" ry="2" />
+<text  x="262.31" y="2079.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (1 samples, 0.04%)</title><rect x="819.3" y="1621" width="0.5" height="15.0" fill="rgb(252,146,2)" rx="2" ry="2" />
+<text  x="822.32" y="1631.5" ></text>
+</g>
+<g >
+<title>g_main_context_dispatch (4 samples, 0.16%)</title><rect x="82.6" y="2053" width="1.9" height="15.0" fill="rgb(211,107,11)" rx="2" ry="2" />
+<text  x="85.64" y="2063.5" ></text>
+</g>
+<g >
+<title>[libcogl.so.20.4.1] (3 samples, 0.12%)</title><rect x="242.0" y="2037" width="1.4" height="15.0" fill="rgb(222,44,2)" rx="2" ry="2" />
+<text  x="244.97" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="293" width="0.9" height="15.0" fill="rgb(229,229,28)" rx="2" ry="2" />
+<text  x="65.49" y="303.5" ></text>
+</g>
+<g >
+<title>cogl_object_get_user_data (1 samples, 0.04%)</title><rect x="242.9" y="1973" width="0.5" height="15.0" fill="rgb(252,185,28)" rx="2" ry="2" />
+<text  x="245.91" y="1983.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1941" width="0.5" height="15.0" fill="rgb(252,29,0)" rx="2" ry="2" />
+<text  x="65.02" y="1951.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="35.3" y="1973" width="3.8" height="15.0" fill="rgb(205,219,17)" rx="2" ry="2" />
+<text  x="38.31" y="1983.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1045" width="0.5" height="15.0" fill="rgb(252,153,35)" rx="2" ry="2" />
+<text  x="208.89" y="1055.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="217.6" y="1589" width="0.5" height="15.0" fill="rgb(221,153,53)" rx="2" ry="2" />
+<text  x="220.60" y="1599.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="35.8" y="1797" width="2.8" height="15.0" fill="rgb(226,79,1)" rx="2" ry="2" />
+<text  x="38.77" y="1807.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="26.4" y="1669" width="2.8" height="15.0" fill="rgb(237,163,50)" rx="2" ry="2" />
+<text  x="29.40" y="1679.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="234.5" y="1797" width="0.4" height="15.0" fill="rgb(225,229,35)" rx="2" ry="2" />
+<text  x="237.47" y="1807.5" ></text>
+</g>
+<g >
+<title>sort1 (1,349 samples, 53.57%)</title><rect x="554.1" y="1813" width="632.2" height="15.0" fill="rgb(253,155,17)" rx="2" ry="2" />
+<text  x="557.07" y="1823.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1909" width="0.5" height="15.0" fill="rgb(211,226,5)" rx="2" ry="2" />
+<text  x="65.02" y="1919.5" ></text>
+</g>
+<g >
+<title>[chrome] (32 samples, 1.27%)</title><rect x="201.2" y="1413" width="15.0" height="15.0" fill="rgb(239,207,32)" rx="2" ry="2" />
+<text  x="204.20" y="1423.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="76.5" y="517" width="1.5" height="15.0" fill="rgb(241,44,31)" rx="2" ry="2" />
+<text  x="79.54" y="527.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="76.5" y="405" width="1.5" height="15.0" fill="rgb(222,210,45)" rx="2" ry="2" />
+<text  x="79.54" y="415.5" ></text>
+</g>
+<g >
+<title>[chrome] (21 samples, 0.83%)</title><rect x="225.6" y="1877" width="9.8" height="15.0" fill="rgb(236,138,51)" rx="2" ry="2" />
+<text  x="228.57" y="1887.5" ></text>
+</g>
+<g >
+<title>sort1 (1,712 samples, 67.99%)</title><rect x="384.0" y="1941" width="802.3" height="15.0" fill="rgb(211,197,49)" rx="2" ry="2" />
+<text  x="386.96" y="1951.5" >sort1</text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="160.0" y="1957" width="0.4" height="15.0" fill="rgb(232,36,40)" rx="2" ry="2" />
+<text  x="162.96" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="10.5" y="1957" width="2.8" height="15.0" fill="rgb(253,107,0)" rx="2" ry="2" />
+<text  x="13.47" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="10.5" y="1941" width="0.9" height="15.0" fill="rgb(251,221,48)" rx="2" ry="2" />
+<text  x="13.47" y="1951.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1813" width="0.5" height="15.0" fill="rgb(236,111,9)" rx="2" ry="2" />
+<text  x="88.92" y="1823.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="165" width="0.9" height="15.0" fill="rgb(247,76,17)" rx="2" ry="2" />
+<text  x="65.49" y="175.5" ></text>
+</g>
+<g >
+<title>[chrome] (32 samples, 1.27%)</title><rect x="39.5" y="1941" width="15.0" height="15.0" fill="rgb(245,138,35)" rx="2" ry="2" />
+<text  x="42.52" y="1951.5" ></text>
+</g>
+<g >
+<title>sort1 (2 samples, 0.08%)</title><rect x="1185.3" y="1237" width="1.0" height="15.0" fill="rgb(254,171,0)" rx="2" ry="2" />
+<text  x="1188.31" y="1247.5" ></text>
+</g>
+<g >
+<title>__vdso_clock_gettime (1 samples, 0.04%)</title><rect x="68.6" y="1989" width="0.4" height="15.0" fill="rgb(215,224,41)" rx="2" ry="2" />
+<text  x="71.58" y="1999.5" ></text>
+</g>
+<g >
+<title>[chrome] (8 samples, 0.32%)</title><rect x="48.9" y="1733" width="3.7" height="15.0" fill="rgb(228,29,36)" rx="2" ry="2" />
+<text  x="51.90" y="1743.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="79.8" y="1509" width="0.5" height="15.0" fill="rgb(211,57,43)" rx="2" ry="2" />
+<text  x="82.83" y="1519.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1125" width="0.9" height="15.0" fill="rgb(248,207,47)" rx="2" ry="2" />
+<text  x="65.49" y="1135.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1797" width="0.5" height="15.0" fill="rgb(230,34,7)" rx="2" ry="2" />
+<text  x="88.92" y="1807.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="85" width="0.9" height="15.0" fill="rgb(241,108,25)" rx="2" ry="2" />
+<text  x="65.49" y="95.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1237" width="2.8" height="15.0" fill="rgb(243,29,8)" rx="2" ry="2" />
+<text  x="78.61" y="1247.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="549" width="1.9" height="15.0" fill="rgb(216,177,5)" rx="2" ry="2" />
+<text  x="79.54" y="559.5" ></text>
+</g>
+<g >
+<title>[chrome] (83 samples, 3.30%)</title><rect x="179.2" y="1717" width="38.9" height="15.0" fill="rgb(243,131,14)" rx="2" ry="2" />
+<text  x="182.17" y="1727.5" >[ch..</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="217.6" y="1637" width="0.5" height="15.0" fill="rgb(230,41,40)" rx="2" ry="2" />
+<text  x="220.60" y="1647.5" ></text>
+</g>
+<g >
+<title>:1165 (1 samples, 0.04%)</title><rect x="10.0" y="2069" width="0.5" height="15.0" fill="rgb(229,67,54)" rx="2" ry="2" />
+<text  x="13.00" y="2079.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="1845" width="3.8" height="15.0" fill="rgb(219,222,7)" rx="2" ry="2" />
+<text  x="28.93" y="1855.5" ></text>
+</g>
+<g >
+<title>[Discord] (25 samples, 0.99%)</title><rect x="69.0" y="1861" width="11.8" height="15.0" fill="rgb(212,168,27)" rx="2" ry="2" />
+<text  x="72.05" y="1871.5" ></text>
+</g>
+<g >
+<title>[Discord] (14 samples, 0.56%)</title><rect x="55.0" y="2021" width="6.5" height="15.0" fill="rgb(230,95,50)" rx="2" ry="2" />
+<text  x="57.99" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="10.5" y="2021" width="2.8" height="15.0" fill="rgb(215,188,12)" rx="2" ry="2" />
+<text  x="13.47" y="2031.5" ></text>
+</g>
+<g >
+<title>[libgirepository-1.0.so.1.0.0] (1 samples, 0.04%)</title><rect x="251.8" y="2005" width="0.5" height="15.0" fill="rgb(214,1,10)" rx="2" ry="2" />
+<text  x="254.81" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="83.1" y="1973" width="1.4" height="15.0" fill="rgb(248,108,47)" rx="2" ry="2" />
+<text  x="86.11" y="1983.5" ></text>
+</g>
+<g >
+<title>[chrome] (46 samples, 1.83%)</title><rect x="196.0" y="1541" width="21.6" height="15.0" fill="rgb(222,183,34)" rx="2" ry="2" />
+<text  x="199.04" y="1551.5" >[..</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="229" width="0.9" height="15.0" fill="rgb(208,19,53)" rx="2" ry="2" />
+<text  x="65.49" y="239.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="62.5" y="37" width="0.5" height="15.0" fill="rgb(205,64,35)" rx="2" ry="2" />
+<text  x="65.49" y="47.5" ></text>
+</g>
+<g >
+<title>[unknown] (128 samples, 5.08%)</title><rect x="164.2" y="2053" width="60.0" height="15.0" fill="rgb(250,57,47)" rx="2" ry="2" />
+<text  x="167.18" y="2063.5" >[unkno..</text>
+</g>
+<g >
+<title>sort1 (10 samples, 0.40%)</title><rect x="1181.6" y="1285" width="4.7" height="15.0" fill="rgb(213,148,1)" rx="2" ry="2" />
+<text  x="1184.56" y="1295.5" ></text>
+</g>
+<g >
+<title>[chrome] (56 samples, 2.22%)</title><rect x="191.4" y="1621" width="26.2" height="15.0" fill="rgb(215,81,53)" rx="2" ry="2" />
+<text  x="194.36" y="1631.5" >[..</text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="35.3" y="1893" width="3.8" height="15.0" fill="rgb(236,195,23)" rx="2" ry="2" />
+<text  x="38.31" y="1903.5" ></text>
+</g>
+<g >
+<title>[chrome] (32 samples, 1.27%)</title><rect x="122.5" y="1957" width="15.0" height="15.0" fill="rgb(229,79,14)" rx="2" ry="2" />
+<text  x="125.47" y="1967.5" ></text>
+</g>
+<g >
+<title>[chrome] (79 samples, 3.14%)</title><rect x="181.0" y="1701" width="37.1" height="15.0" fill="rgb(232,48,44)" rx="2" ry="2" />
+<text  x="184.05" y="1711.5" >[ch..</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1861" width="0.5" height="15.0" fill="rgb(205,162,16)" rx="2" ry="2" />
+<text  x="123.13" y="1871.5" ></text>
+</g>
+<g >
+<title>[chrome] (15 samples, 0.60%)</title><rect x="129.5" y="1781" width="7.0" height="15.0" fill="rgb(249,104,33)" rx="2" ry="2" />
+<text  x="132.50" y="1791.5" ></text>
+</g>
+<g >
+<title>sort1 (1,395 samples, 55.40%)</title><rect x="532.5" y="1829" width="653.8" height="15.0" fill="rgb(240,183,37)" rx="2" ry="2" />
+<text  x="535.52" y="1839.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1941" width="0.5" height="15.0" fill="rgb(236,80,11)" rx="2" ry="2" />
+<text  x="88.92" y="1951.5" ></text>
+</g>
+<g >
+<title>syscall_return_via_sysret (1 samples, 0.04%)</title><rect x="82.2" y="1877" width="0.4" height="15.0" fill="rgb(226,89,39)" rx="2" ry="2" />
+<text  x="85.17" y="1887.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="35.8" y="1877" width="3.3" height="15.0" fill="rgb(216,59,8)" rx="2" ry="2" />
+<text  x="38.77" y="1887.5" ></text>
+</g>
+<g >
+<title>__random_r (17 samples, 0.68%)</title><rect x="276.2" y="2005" width="7.9" height="15.0" fill="rgb(218,54,49)" rx="2" ry="2" />
+<text  x="279.18" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="213" width="0.9" height="15.0" fill="rgb(230,195,31)" rx="2" ry="2" />
+<text  x="65.49" y="223.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1317" width="2.8" height="15.0" fill="rgb(236,175,34)" rx="2" ry="2" />
+<text  x="78.61" y="1327.5" ></text>
+</g>
+<g >
+<title>g_queue_push_tail (1 samples, 0.04%)</title><rect x="256.5" y="2037" width="0.5" height="15.0" fill="rgb(250,208,17)" rx="2" ry="2" />
+<text  x="259.50" y="2047.5" ></text>
+</g>
+<g >
+<title>[libc-2.23.so] (1 samples, 0.04%)</title><rect x="33.4" y="1925" width="0.5" height="15.0" fill="rgb(241,107,6)" rx="2" ry="2" />
+<text  x="36.43" y="1935.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="869" width="0.5" height="15.0" fill="rgb(208,150,13)" rx="2" ry="2" />
+<text  x="208.89" y="879.5" ></text>
+</g>
+<g >
+<title>sort1 (1,298 samples, 51.55%)</title><rect x="578.0" y="1797" width="608.3" height="15.0" fill="rgb(223,189,45)" rx="2" ry="2" />
+<text  x="580.97" y="1807.5" >sort1</text>
+</g>
+<g >
+<title>perf (9 samples, 0.36%)</title><rect x="264.0" y="2069" width="4.2" height="15.0" fill="rgb(243,103,4)" rx="2" ry="2" />
+<text  x="267.00" y="2079.5" ></text>
+</g>
+<g >
+<title>[chrome] (72 samples, 2.86%)</title><rect x="86.4" y="1941" width="33.7" height="15.0" fill="rgb(232,8,7)" rx="2" ry="2" />
+<text  x="89.39" y="1951.5" >[c..</text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="238.2" y="2037" width="0.5" height="15.0" fill="rgb(239,67,49)" rx="2" ry="2" />
+<text  x="241.22" y="2047.5" ></text>
+</g>
+<g >
+<title>[libmozjs-38.so.0.0.0] (1 samples, 0.04%)</title><rect x="257.4" y="1877" width="0.5" height="15.0" fill="rgb(235,121,27)" rx="2" ry="2" />
+<text  x="260.43" y="1887.5" ></text>
+</g>
+<g >
+<title>[chrome] (3 samples, 0.12%)</title><rect x="231.7" y="1685" width="1.4" height="15.0" fill="rgb(241,27,19)" rx="2" ry="2" />
+<text  x="234.66" y="1695.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned (4 samples, 0.16%)</title><rect x="219.5" y="1781" width="1.9" height="15.0" fill="rgb(234,103,52)" rx="2" ry="2" />
+<text  x="222.48" y="1791.5" ></text>
+</g>
+<g >
+<title>[chrome] (7 samples, 0.28%)</title><rect x="18.0" y="1781" width="3.2" height="15.0" fill="rgb(252,225,20)" rx="2" ry="2" />
+<text  x="20.97" y="1791.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="37.6" y="1685" width="0.5" height="15.0" fill="rgb(246,152,30)" rx="2" ry="2" />
+<text  x="40.65" y="1695.5" ></text>
+</g>
+<g >
+<title>[chrome] (3 samples, 0.12%)</title><rect x="50.8" y="1621" width="1.4" height="15.0" fill="rgb(209,182,17)" rx="2" ry="2" />
+<text  x="53.77" y="1631.5" ></text>
+</g>
+<g >
+<title>g_slice_alloc (1 samples, 0.04%)</title><rect x="263.1" y="2053" width="0.4" height="15.0" fill="rgb(218,14,21)" rx="2" ry="2" />
+<text  x="266.06" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (72 samples, 2.86%)</title><rect x="86.4" y="2005" width="33.7" height="15.0" fill="rgb(216,138,13)" rx="2" ry="2" />
+<text  x="89.39" y="2015.5" >[c..</text>
+</g>
+<g >
+<title>[chrome] (125 samples, 4.96%)</title><rect x="165.6" y="2005" width="58.6" height="15.0" fill="rgb(235,26,13)" rx="2" ry="2" />
+<text  x="168.58" y="2015.5" >[chrome]</text>
+</g>
+<g >
+<title>[perf-3795.map] (1 samples, 0.04%)</title><rect x="217.6" y="1669" width="0.5" height="15.0" fill="rgb(209,115,21)" rx="2" ry="2" />
+<text  x="220.60" y="1679.5" ></text>
+</g>
+<g >
+<title>[Discord] (9 samples, 0.36%)</title><rect x="74.2" y="1365" width="4.2" height="15.0" fill="rgb(247,51,18)" rx="2" ry="2" />
+<text  x="77.20" y="1375.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="37.2" y="1717" width="0.9" height="15.0" fill="rgb(239,141,9)" rx="2" ry="2" />
+<text  x="40.18" y="1727.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1349" width="0.9" height="15.0" fill="rgb(237,5,0)" rx="2" ry="2" />
+<text  x="65.49" y="1359.5" ></text>
+</g>
+<g >
+<title>[Discord] (13 samples, 0.52%)</title><rect x="55.5" y="1877" width="6.0" height="15.0" fill="rgb(238,71,34)" rx="2" ry="2" />
+<text  x="58.46" y="1887.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="261" width="0.9" height="15.0" fill="rgb(253,170,49)" rx="2" ry="2" />
+<text  x="65.49" y="271.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="60.1" y="1653" width="1.4" height="15.0" fill="rgb(207,137,20)" rx="2" ry="2" />
+<text  x="63.14" y="1663.5" ></text>
+</g>
+<g >
+<title>[Discord] (25 samples, 0.99%)</title><rect x="69.0" y="1845" width="11.8" height="15.0" fill="rgb(227,194,19)" rx="2" ry="2" />
+<text  x="72.05" y="1855.5" ></text>
+</g>
+<g >
+<title>[chrome] (4 samples, 0.16%)</title><rect x="50.3" y="1701" width="1.9" height="15.0" fill="rgb(218,122,4)" rx="2" ry="2" />
+<text  x="53.30" y="1711.5" ></text>
+</g>
+<g >
+<title>[chrome] (4 samples, 0.16%)</title><rect x="231.2" y="1717" width="1.9" height="15.0" fill="rgb(206,131,8)" rx="2" ry="2" />
+<text  x="234.19" y="1727.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="122.0" y="1733" width="0.5" height="15.0" fill="rgb(211,112,50)" rx="2" ry="2" />
+<text  x="125.00" y="1743.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (2 samples, 0.08%)</title><rect x="33.9" y="1925" width="0.9" height="15.0" fill="rgb(248,137,12)" rx="2" ry="2" />
+<text  x="36.90" y="1935.5" ></text>
+</g>
+<g >
+<title>[chrome] (29 samples, 1.15%)</title><rect x="106.5" y="1893" width="13.6" height="15.0" fill="rgb(212,50,28)" rx="2" ry="2" />
+<text  x="109.54" y="1903.5" ></text>
+</g>
+<g >
+<title>[chrome] (19 samples, 0.75%)</title><rect x="14.2" y="1909" width="8.9" height="15.0" fill="rgb(234,42,51)" rx="2" ry="2" />
+<text  x="17.22" y="1919.5" ></text>
+</g>
+<g >
+<title>sort1 (1,665 samples, 66.12%)</title><rect x="406.0" y="1925" width="780.3" height="15.0" fill="rgb(245,81,39)" rx="2" ry="2" />
+<text  x="408.99" y="1935.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (19 samples, 0.75%)</title><rect x="14.2" y="1925" width="8.9" height="15.0" fill="rgb(232,1,7)" rx="2" ry="2" />
+<text  x="17.22" y="1935.5" ></text>
+</g>
+<g >
+<title>[libgdk-3.so.0.1800.9] (1 samples, 0.04%)</title><rect x="238.2" y="2021" width="0.5" height="15.0" fill="rgb(230,189,33)" rx="2" ry="2" />
+<text  x="241.22" y="2031.5" ></text>
+</g>
+<g >
+<title>start_thread (1 samples, 0.04%)</title><rect x="120.1" y="2053" width="0.5" height="15.0" fill="rgb(216,84,35)" rx="2" ry="2" />
+<text  x="123.13" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="79.4" y="1621" width="0.9" height="15.0" fill="rgb(251,54,7)" rx="2" ry="2" />
+<text  x="82.36" y="1631.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="1989" width="3.8" height="15.0" fill="rgb(248,51,13)" rx="2" ry="2" />
+<text  x="28.93" y="1999.5" ></text>
+</g>
+<g >
+<title>cogl_matrix_multiply (1 samples, 0.04%)</title><rect x="254.6" y="2037" width="0.5" height="15.0" fill="rgb(207,33,2)" rx="2" ry="2" />
+<text  x="257.62" y="2047.5" ></text>
+</g>
+<g >
+<title>syscall_return_via_sysret (1 samples, 0.04%)</title><rect x="265.9" y="1941" width="0.4" height="15.0" fill="rgb(247,111,26)" rx="2" ry="2" />
+<text  x="268.87" y="1951.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (3 samples, 0.12%)</title><rect x="221.4" y="1781" width="1.4" height="15.0" fill="rgb(234,203,23)" rx="2" ry="2" />
+<text  x="224.35" y="1791.5" ></text>
+</g>
+<g >
+<title>__clock_gettime (1 samples, 0.04%)</title><rect x="25.5" y="2037" width="0.4" height="15.0" fill="rgb(219,138,31)" rx="2" ry="2" />
+<text  x="28.46" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1365" width="0.9" height="15.0" fill="rgb(237,158,40)" rx="2" ry="2" />
+<text  x="65.49" y="1375.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1477" width="7.0" height="15.0" fill="rgb(254,42,50)" rx="2" ry="2" />
+<text  x="74.39" y="1487.5" ></text>
+</g>
+<g >
+<title>g_param_spec_pool_lookup (1 samples, 0.04%)</title><rect x="259.8" y="2037" width="0.4" height="15.0" fill="rgb(235,199,15)" rx="2" ry="2" />
+<text  x="262.78" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (12 samples, 0.48%)</title><rect x="72.8" y="1413" width="5.6" height="15.0" fill="rgb(206,212,40)" rx="2" ry="2" />
+<text  x="75.80" y="1423.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1253" width="0.9" height="15.0" fill="rgb(227,99,23)" rx="2" ry="2" />
+<text  x="65.49" y="1263.5" ></text>
+</g>
+<g >
+<title>__read_nocancel (1 samples, 0.04%)</title><rect x="266.3" y="1973" width="0.5" height="15.0" fill="rgb(236,214,49)" rx="2" ry="2" />
+<text  x="269.34" y="1983.5" ></text>
+</g>
+<g >
+<title>systemd-udevd (5 samples, 0.20%)</title><rect x="1186.7" y="2069" width="2.4" height="15.0" fill="rgb(210,200,5)" rx="2" ry="2" />
+<text  x="1189.72" y="2079.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="32.0" y="1733" width="0.5" height="15.0" fill="rgb(234,124,29)" rx="2" ry="2" />
+<text  x="35.03" y="1743.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="260.2" y="2053" width="0.5" height="15.0" fill="rgb(208,92,50)" rx="2" ry="2" />
+<text  x="263.25" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (10 samples, 0.40%)</title><rect x="131.8" y="1717" width="4.7" height="15.0" fill="rgb(207,134,11)" rx="2" ry="2" />
+<text  x="134.84" y="1727.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="27.8" y="1541" width="0.5" height="15.0" fill="rgb(241,147,45)" rx="2" ry="2" />
+<text  x="30.81" y="1551.5" ></text>
+</g>
+<g >
+<title>rand@plt (1 samples, 0.04%)</title><rect x="310.9" y="2005" width="0.4" height="15.0" fill="rgb(213,36,22)" rx="2" ry="2" />
+<text  x="313.86" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1637" width="0.4" height="15.0" fill="rgb(215,155,22)" rx="2" ry="2" />
+<text  x="122.66" y="1647.5" ></text>
+</g>
+<g >
+<title>[Discord] (17 samples, 0.68%)</title><rect x="70.9" y="1701" width="8.0" height="15.0" fill="rgb(251,199,26)" rx="2" ry="2" />
+<text  x="73.92" y="1711.5" ></text>
+</g>
+<g >
+<title>sort1 (2 samples, 0.08%)</title><rect x="1185.3" y="1189" width="1.0" height="15.0" fill="rgb(222,79,42)" rx="2" ry="2" />
+<text  x="1188.31" y="1199.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="79.4" y="1589" width="0.9" height="15.0" fill="rgb(229,26,41)" rx="2" ry="2" />
+<text  x="82.36" y="1599.5" ></text>
+</g>
+<g >
+<title>[Discord] (12 samples, 0.48%)</title><rect x="55.9" y="1829" width="5.6" height="15.0" fill="rgb(242,178,42)" rx="2" ry="2" />
+<text  x="58.93" y="1839.5" ></text>
+</g>
+<g >
+<title>[chrome] (24 samples, 0.95%)</title><rect x="125.8" y="1813" width="11.2" height="15.0" fill="rgb(225,105,25)" rx="2" ry="2" />
+<text  x="128.75" y="1823.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="53.6" y="1797" width="0.5" height="15.0" fill="rgb(254,22,9)" rx="2" ry="2" />
+<text  x="56.58" y="1807.5" ></text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="232.1" y="1669" width="1.0" height="15.0" fill="rgb(215,135,9)" rx="2" ry="2" />
+<text  x="235.13" y="1679.5" ></text>
+</g>
+<g >
+<title>[Discord] (13 samples, 0.52%)</title><rect x="55.5" y="1941" width="6.0" height="15.0" fill="rgb(220,51,41)" rx="2" ry="2" />
+<text  x="58.46" y="1951.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1493" width="7.0" height="15.0" fill="rgb(230,120,33)" rx="2" ry="2" />
+<text  x="74.39" y="1503.5" ></text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="205.4" y="1253" width="1.0" height="15.0" fill="rgb(236,25,47)" rx="2" ry="2" />
+<text  x="208.42" y="1263.5" ></text>
+</g>
+<g >
+<title>[chrome] (4 samples, 0.16%)</title><rect x="50.3" y="1669" width="1.9" height="15.0" fill="rgb(233,101,37)" rx="2" ry="2" />
+<text  x="53.30" y="1679.5" ></text>
+</g>
+<g >
+<title>_int_malloc (2 samples, 0.08%)</title><rect x="257.9" y="2053" width="0.9" height="15.0" fill="rgb(241,62,7)" rx="2" ry="2" />
+<text  x="260.90" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="77.0" y="293" width="1.0" height="15.0" fill="rgb(238,210,18)" rx="2" ry="2" />
+<text  x="80.01" y="303.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1989" width="0.5" height="15.0" fill="rgb(245,176,38)" rx="2" ry="2" />
+<text  x="88.92" y="1999.5" ></text>
+</g>
+<g >
+<title>sort (1,959 samples, 77.80%)</title><rect x="268.7" y="2069" width="918.0" height="15.0" fill="rgb(210,215,20)" rx="2" ry="2" />
+<text  x="271.68" y="2079.5" >sort</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1077" width="0.9" height="15.0" fill="rgb(243,185,4)" rx="2" ry="2" />
+<text  x="65.49" y="1087.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="257.4" y="1909" width="0.5" height="15.0" fill="rgb(209,84,24)" rx="2" ry="2" />
+<text  x="260.43" y="1919.5" ></text>
+</g>
+<g >
+<title>pthread_mutex_lock (1 samples, 0.04%)</title><rect x="33.0" y="1765" width="0.4" height="15.0" fill="rgb(216,17,12)" rx="2" ry="2" />
+<text  x="35.96" y="1775.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="965" width="1.9" height="15.0" fill="rgb(217,179,33)" rx="2" ry="2" />
+<text  x="79.54" y="975.5" ></text>
+</g>
+<g >
+<title>[chrome] (7 samples, 0.28%)</title><rect x="131.8" y="1669" width="3.3" height="15.0" fill="rgb(218,174,37)" rx="2" ry="2" />
+<text  x="134.84" y="1679.5" ></text>
+</g>
+<g >
+<title>[chrome] (25 samples, 0.99%)</title><rect x="125.8" y="1829" width="11.7" height="15.0" fill="rgb(226,78,7)" rx="2" ry="2" />
+<text  x="128.75" y="1839.5" ></text>
+</g>
+<g >
+<title>[chrome] (53 samples, 2.10%)</title><rect x="192.8" y="1573" width="24.8" height="15.0" fill="rgb(206,106,28)" rx="2" ry="2" />
+<text  x="195.76" y="1583.5" >[..</text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="1077" width="2.3" height="15.0" fill="rgb(220,42,2)" rx="2" ry="2" />
+<text  x="79.08" y="1087.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (8 samples, 0.32%)</title><rect x="211.5" y="1301" width="3.8" height="15.0" fill="rgb(206,130,17)" rx="2" ry="2" />
+<text  x="214.51" y="1311.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="218.5" y="1765" width="0.5" height="15.0" fill="rgb(246,90,23)" rx="2" ry="2" />
+<text  x="221.54" y="1775.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1093" width="0.9" height="15.0" fill="rgb(241,148,37)" rx="2" ry="2" />
+<text  x="65.49" y="1103.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="789" width="1.9" height="15.0" fill="rgb(236,115,4)" rx="2" ry="2" />
+<text  x="79.54" y="799.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="133" width="0.9" height="15.0" fill="rgb(206,80,24)" rx="2" ry="2" />
+<text  x="65.49" y="143.5" ></text>
+</g>
+<g >
+<title>[perf] (1 samples, 0.04%)</title><rect x="264.5" y="1941" width="0.4" height="15.0" fill="rgb(224,156,42)" rx="2" ry="2" />
+<text  x="267.46" y="1951.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1957" width="0.5" height="15.0" fill="rgb(210,1,17)" rx="2" ry="2" />
+<text  x="88.92" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="83.1" y="1957" width="1.4" height="15.0" fill="rgb(211,93,22)" rx="2" ry="2" />
+<text  x="86.11" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="26.4" y="1749" width="3.3" height="15.0" fill="rgb(223,30,48)" rx="2" ry="2" />
+<text  x="29.40" y="1759.5" ></text>
+</g>
+<g >
+<title>pthread_mutex_lock (1 samples, 0.04%)</title><rect x="136.5" y="1781" width="0.5" height="15.0" fill="rgb(228,92,11)" rx="2" ry="2" />
+<text  x="139.53" y="1791.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="2037" width="1.9" height="15.0" fill="rgb(225,205,20)" rx="2" ry="2" />
+<text  x="123.60" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="2021" width="0.9" height="15.0" fill="rgb(248,136,40)" rx="2" ry="2" />
+<text  x="65.49" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="661" width="0.9" height="15.0" fill="rgb(226,115,54)" rx="2" ry="2" />
+<text  x="65.49" y="671.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1589" width="0.9" height="15.0" fill="rgb(250,144,47)" rx="2" ry="2" />
+<text  x="65.49" y="1599.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1925" width="1.9" height="15.0" fill="rgb(211,153,32)" rx="2" ry="2" />
+<text  x="123.60" y="1935.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="837" width="0.9" height="15.0" fill="rgb(228,39,4)" rx="2" ry="2" />
+<text  x="65.49" y="847.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="469" width="0.9" height="15.0" fill="rgb(239,216,12)" rx="2" ry="2" />
+<text  x="65.49" y="479.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="27.3" y="1573" width="1.0" height="15.0" fill="rgb(207,191,54)" rx="2" ry="2" />
+<text  x="30.34" y="1583.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1765" width="0.5" height="15.0" fill="rgb(220,124,9)" rx="2" ry="2" />
+<text  x="88.92" y="1775.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1781" width="0.9" height="15.0" fill="rgb(243,88,1)" rx="2" ry="2" />
+<text  x="65.49" y="1791.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1061" width="0.9" height="15.0" fill="rgb(226,68,35)" rx="2" ry="2" />
+<text  x="65.49" y="1071.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1029" width="0.5" height="15.0" fill="rgb(254,59,41)" rx="2" ry="2" />
+<text  x="208.89" y="1039.5" ></text>
+</g>
+<g >
+<title>[chrome] (12 samples, 0.48%)</title><rect x="29.7" y="1973" width="5.6" height="15.0" fill="rgb(245,179,33)" rx="2" ry="2" />
+<text  x="32.68" y="1983.5" ></text>
+</g>
+<g >
+<title>syscall_return_via_sysret (1 samples, 0.04%)</title><rect x="267.7" y="1973" width="0.5" height="15.0" fill="rgb(223,124,10)" rx="2" ry="2" />
+<text  x="270.74" y="1983.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="26.4" y="1765" width="3.3" height="15.0" fill="rgb(210,50,30)" rx="2" ry="2" />
+<text  x="29.40" y="1775.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1765" width="0.5" height="15.0" fill="rgb(254,113,46)" rx="2" ry="2" />
+<text  x="65.02" y="1775.5" ></text>
+</g>
+<g >
+<title>[Discord] (10 samples, 0.40%)</title><rect x="56.9" y="1765" width="4.6" height="15.0" fill="rgb(232,63,18)" rx="2" ry="2" />
+<text  x="59.86" y="1775.5" ></text>
+</g>
+<g >
+<title>g_datalist_id_dup_data (1 samples, 0.04%)</title><rect x="253.7" y="2021" width="0.5" height="15.0" fill="rgb(227,74,22)" rx="2" ry="2" />
+<text  x="256.69" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1077" width="0.5" height="15.0" fill="rgb(246,106,51)" rx="2" ry="2" />
+<text  x="208.89" y="1087.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1989" width="1.9" height="15.0" fill="rgb(252,149,46)" rx="2" ry="2" />
+<text  x="123.60" y="1999.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="805" width="0.5" height="15.0" fill="rgb(209,150,28)" rx="2" ry="2" />
+<text  x="208.89" y="815.5" ></text>
+</g>
+<g >
+<title>[chrome] (32 samples, 1.27%)</title><rect x="122.5" y="2021" width="15.0" height="15.0" fill="rgb(216,23,48)" rx="2" ry="2" />
+<text  x="125.47" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="933" width="0.5" height="15.0" fill="rgb(225,57,44)" rx="2" ry="2" />
+<text  x="208.89" y="943.5" ></text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="205.4" y="1237" width="1.0" height="15.0" fill="rgb(237,182,30)" rx="2" ry="2" />
+<text  x="208.42" y="1247.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1285" width="2.8" height="15.0" fill="rgb(226,154,19)" rx="2" ry="2" />
+<text  x="78.61" y="1295.5" ></text>
+</g>
+<g >
+<title>start_thread (16 samples, 0.64%)</title><rect x="55.0" y="2053" width="7.5" height="15.0" fill="rgb(220,43,37)" rx="2" ry="2" />
+<text  x="57.99" y="2063.5" ></text>
+</g>
+<g >
+<title>[libpulsecommon-8.0.so] (1 samples, 0.04%)</title><rect x="63.4" y="2053" width="0.5" height="15.0" fill="rgb(223,18,48)" rx="2" ry="2" />
+<text  x="66.42" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="1909" width="3.8" height="15.0" fill="rgb(218,113,23)" rx="2" ry="2" />
+<text  x="28.93" y="1919.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="85.0" y="2021" width="0.4" height="15.0" fill="rgb(254,37,12)" rx="2" ry="2" />
+<text  x="87.98" y="2031.5" ></text>
+</g>
+<g >
+<title>sort1 (101 samples, 4.01%)</title><rect x="1138.9" y="1381" width="47.4" height="15.0" fill="rgb(207,142,34)" rx="2" ry="2" />
+<text  x="1141.92" y="1391.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="1045" width="2.3" height="15.0" fill="rgb(245,84,6)" rx="2" ry="2" />
+<text  x="79.08" y="1055.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="36.7" y="1781" width="1.4" height="15.0" fill="rgb(220,3,13)" rx="2" ry="2" />
+<text  x="39.71" y="1791.5" ></text>
+</g>
+<g >
+<title>[perf] (4 samples, 0.16%)</title><rect x="266.3" y="2037" width="1.9" height="15.0" fill="rgb(237,132,12)" rx="2" ry="2" />
+<text  x="269.34" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="405" width="0.9" height="15.0" fill="rgb(211,94,12)" rx="2" ry="2" />
+<text  x="65.49" y="415.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1205" width="0.9" height="15.0" fill="rgb(229,41,19)" rx="2" ry="2" />
+<text  x="65.49" y="1215.5" ></text>
+</g>
+<g >
+<title>[libgio-2.0.so.0.4800.2] (1 samples, 0.04%)</title><rect x="259.3" y="2021" width="0.5" height="15.0" fill="rgb(231,205,31)" rx="2" ry="2" />
+<text  x="262.31" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1557" width="7.0" height="15.0" fill="rgb(220,80,28)" rx="2" ry="2" />
+<text  x="74.39" y="1567.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="76.5" y="469" width="1.5" height="15.0" fill="rgb(233,54,24)" rx="2" ry="2" />
+<text  x="79.54" y="479.5" ></text>
+</g>
+<g >
+<title>sort1 (1 samples, 0.04%)</title><rect x="1185.8" y="1157" width="0.5" height="15.0" fill="rgb(231,40,11)" rx="2" ry="2" />
+<text  x="1188.78" y="1167.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="2037" width="3.8" height="15.0" fill="rgb(247,13,32)" rx="2" ry="2" />
+<text  x="28.93" y="2047.5" ></text>
+</g>
+<g >
+<title>gjs_call_function_value (1 samples, 0.04%)</title><rect x="257.4" y="2037" width="0.5" height="15.0" fill="rgb(236,153,7)" rx="2" ry="2" />
+<text  x="260.43" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="837" width="0.5" height="15.0" fill="rgb(221,120,49)" rx="2" ry="2" />
+<text  x="208.89" y="847.5" ></text>
+</g>
+<g >
+<title>[chrome] (93 samples, 3.69%)</title><rect x="175.0" y="1765" width="43.5" height="15.0" fill="rgb(213,128,10)" rx="2" ry="2" />
+<text  x="177.96" y="1775.5" >[chr..</text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="260.7" y="2053" width="0.5" height="15.0" fill="rgb(227,163,8)" rx="2" ry="2" />
+<text  x="263.71" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (7 samples, 0.28%)</title><rect x="30.2" y="1925" width="3.2" height="15.0" fill="rgb(205,184,22)" rx="2" ry="2" />
+<text  x="33.15" y="1935.5" ></text>
+</g>
+<g >
+<title>[libgobject-2.0.so.0.4800.2] (1 samples, 0.04%)</title><rect x="262.6" y="2021" width="0.5" height="15.0" fill="rgb(245,43,2)" rx="2" ry="2" />
+<text  x="265.59" y="2031.5" ></text>
+</g>
+<g >
+<title>[libmozjs-38.so.0.0.0] (1 samples, 0.04%)</title><rect x="257.4" y="1989" width="0.5" height="15.0" fill="rgb(245,190,22)" rx="2" ry="2" />
+<text  x="260.43" y="1999.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1797" width="0.5" height="15.0" fill="rgb(212,92,12)" rx="2" ry="2" />
+<text  x="65.02" y="1807.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1829" width="0.5" height="15.0" fill="rgb(208,195,8)" rx="2" ry="2" />
+<text  x="88.92" y="1839.5" ></text>
+</g>
+<g >
+<title>_XEventsQueued (1 samples, 0.04%)</title><rect x="224.2" y="2053" width="0.4" height="15.0" fill="rgb(252,225,44)" rx="2" ry="2" />
+<text  x="227.16" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="901" width="0.5" height="15.0" fill="rgb(241,25,29)" rx="2" ry="2" />
+<text  x="208.89" y="911.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1845" width="0.5" height="15.0" fill="rgb(218,52,16)" rx="2" ry="2" />
+<text  x="65.02" y="1855.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1877" width="0.9" height="15.0" fill="rgb(233,151,8)" rx="2" ry="2" />
+<text  x="65.49" y="1887.5" ></text>
+</g>
+<g >
+<title>_XFreeEventCookies (1 samples, 0.04%)</title><rect x="164.2" y="2021" width="0.4" height="15.0" fill="rgb(235,54,30)" rx="2" ry="2" />
+<text  x="167.18" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1109" width="0.9" height="15.0" fill="rgb(233,8,35)" rx="2" ry="2" />
+<text  x="65.49" y="1119.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="10.5" y="1909" width="0.9" height="15.0" fill="rgb(210,58,20)" rx="2" ry="2" />
+<text  x="13.47" y="1919.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="218.1" y="1733" width="0.4" height="15.0" fill="rgb(234,1,52)" rx="2" ry="2" />
+<text  x="221.07" y="1743.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="10.5" y="1861" width="0.4" height="15.0" fill="rgb(216,14,34)" rx="2" ry="2" />
+<text  x="13.47" y="1871.5" ></text>
+</g>
+<g >
+<title>g_dbus_message_get_type (1 samples, 0.04%)</title><rect x="261.7" y="2053" width="0.4" height="15.0" fill="rgb(211,169,49)" rx="2" ry="2" />
+<text  x="264.65" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1861" width="0.5" height="15.0" fill="rgb(207,141,26)" rx="2" ry="2" />
+<text  x="65.02" y="1871.5" ></text>
+</g>
+<g >
+<title>sort1 (1,619 samples, 64.30%)</title><rect x="427.5" y="1909" width="758.8" height="15.0" fill="rgb(218,163,0)" rx="2" ry="2" />
+<text  x="430.55" y="1919.5" >sort1</text>
+</g>
+<g >
+<title>threaded-ml (1 samples, 0.04%)</title><rect x="1189.1" y="2069" width="0.4" height="15.0" fill="rgb(220,38,17)" rx="2" ry="2" />
+<text  x="1192.06" y="2079.5" ></text>
+</g>
+<g >
+<title>[Discord] (13 samples, 0.52%)</title><rect x="55.5" y="1925" width="6.0" height="15.0" fill="rgb(220,136,35)" rx="2" ry="2" />
+<text  x="58.46" y="1935.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="242.9" y="2005" width="0.5" height="15.0" fill="rgb(245,196,47)" rx="2" ry="2" />
+<text  x="245.91" y="2015.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="38.6" y="1797" width="0.5" height="15.0" fill="rgb(254,204,35)" rx="2" ry="2" />
+<text  x="41.59" y="1807.5" ></text>
+</g>
+<g >
+<title>[chrome] (90 samples, 3.57%)</title><rect x="176.4" y="1749" width="42.1" height="15.0" fill="rgb(247,105,25)" rx="2" ry="2" />
+<text  x="179.36" y="1759.5" >[ch..</text>
+</g>
+<g >
+<title>syscall_return_via_sysret (3 samples, 0.12%)</title><rect x="161.4" y="2037" width="1.4" height="15.0" fill="rgb(225,128,7)" rx="2" ry="2" />
+<text  x="164.37" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1445" width="7.0" height="15.0" fill="rgb(253,132,32)" rx="2" ry="2" />
+<text  x="74.39" y="1455.5" ></text>
+</g>
+<g >
+<title>gdk_event_get_device (1 samples, 0.04%)</title><rect x="263.5" y="2053" width="0.5" height="15.0" fill="rgb(239,109,43)" rx="2" ry="2" />
+<text  x="266.53" y="2063.5" ></text>
+</g>
+<g >
+<title>v8::ValueSerializer::Delegate::GetWasmModuleTransferId (1 samples, 0.04%)</title><rect x="78.0" y="533" width="0.4" height="15.0" fill="rgb(232,168,19)" rx="2" ry="2" />
+<text  x="80.95" y="543.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1973" width="0.5" height="15.0" fill="rgb(208,99,35)" rx="2" ry="2" />
+<text  x="123.13" y="1983.5" ></text>
+</g>
+<g >
+<title>GpuMemoryThread (1 samples, 0.04%)</title><rect x="85.0" y="2069" width="0.4" height="15.0" fill="rgb(226,69,40)" rx="2" ry="2" />
+<text  x="87.98" y="2079.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="1861" width="3.8" height="15.0" fill="rgb(250,220,25)" rx="2" ry="2" />
+<text  x="28.93" y="1871.5" ></text>
+</g>
+<g >
+<title>sort1 (6 samples, 0.24%)</title><rect x="1183.4" y="1269" width="2.9" height="15.0" fill="rgb(212,173,43)" rx="2" ry="2" />
+<text  x="1186.44" y="1279.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1029" width="0.9" height="15.0" fill="rgb(221,145,2)" rx="2" ry="2" />
+<text  x="65.49" y="1039.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1205" width="2.8" height="15.0" fill="rgb(223,118,48)" rx="2" ry="2" />
+<text  x="78.61" y="1215.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="217.6" y="1605" width="0.5" height="15.0" fill="rgb(213,159,38)" rx="2" ry="2" />
+<text  x="220.60" y="1615.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="162.8" y="2053" width="0.4" height="15.0" fill="rgb(226,114,11)" rx="2" ry="2" />
+<text  x="165.77" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="453" width="0.9" height="15.0" fill="rgb(229,78,46)" rx="2" ry="2" />
+<text  x="65.49" y="463.5" ></text>
+</g>
+<g >
+<title>[perf] (4 samples, 0.16%)</title><rect x="266.3" y="1989" width="1.9" height="15.0" fill="rgb(234,192,19)" rx="2" ry="2" />
+<text  x="269.34" y="1999.5" ></text>
+</g>
+<g >
+<title>[Discord] (29 samples, 1.15%)</title><rect x="69.0" y="2005" width="13.6" height="15.0" fill="rgb(235,77,32)" rx="2" ry="2" />
+<text  x="72.05" y="2015.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="219.0" y="1781" width="0.5" height="15.0" fill="rgb(223,174,48)" rx="2" ry="2" />
+<text  x="222.01" y="1791.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="2037" width="0.9" height="15.0" fill="rgb(228,164,18)" rx="2" ry="2" />
+<text  x="65.49" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="35.3" y="2005" width="3.8" height="15.0" fill="rgb(230,35,17)" rx="2" ry="2" />
+<text  x="38.31" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (4 samples, 0.16%)</title><rect x="50.3" y="1653" width="1.9" height="15.0" fill="rgb(254,127,54)" rx="2" ry="2" />
+<text  x="53.30" y="1663.5" ></text>
+</g>
+<g >
+<title>[libmozjs-38.so.0.0.0] (1 samples, 0.04%)</title><rect x="257.4" y="2005" width="0.5" height="15.0" fill="rgb(246,18,49)" rx="2" ry="2" />
+<text  x="260.43" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (21 samples, 0.83%)</title><rect x="225.6" y="1893" width="9.8" height="15.0" fill="rgb(221,72,2)" rx="2" ry="2" />
+<text  x="228.57" y="1903.5" ></text>
+</g>
+<g >
+<title>__clock_gettime (1 samples, 0.04%)</title><rect x="32.5" y="1749" width="0.5" height="15.0" fill="rgb(221,82,14)" rx="2" ry="2" />
+<text  x="35.49" y="1759.5" ></text>
+</g>
+<g >
+<title>[chrome] (34 samples, 1.35%)</title><rect x="39.1" y="1973" width="15.9" height="15.0" fill="rgb(236,93,49)" rx="2" ry="2" />
+<text  x="42.05" y="1983.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="160.0" y="1973" width="0.4" height="15.0" fill="rgb(253,45,37)" rx="2" ry="2" />
+<text  x="162.96" y="1983.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1829" width="1.9" height="15.0" fill="rgb(220,181,15)" rx="2" ry="2" />
+<text  x="123.60" y="1839.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="122.0" y="1749" width="0.5" height="15.0" fill="rgb(211,156,29)" rx="2" ry="2" />
+<text  x="125.00" y="1759.5" ></text>
+</g>
+<g >
+<title>[chrome] (10 samples, 0.40%)</title><rect x="131.8" y="1733" width="4.7" height="15.0" fill="rgb(253,108,33)" rx="2" ry="2" />
+<text  x="134.84" y="1743.5" ></text>
+</g>
+<g >
+<title>JS_CallFunctionValue (1 samples, 0.04%)</title><rect x="257.4" y="2021" width="0.5" height="15.0" fill="rgb(248,62,41)" rx="2" ry="2" />
+<text  x="260.43" y="2031.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="25.5" y="2053" width="0.4" height="15.0" fill="rgb(229,21,23)" rx="2" ry="2" />
+<text  x="28.46" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="26.4" y="1701" width="2.8" height="15.0" fill="rgb(241,214,33)" rx="2" ry="2" />
+<text  x="29.40" y="1711.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1925" width="0.5" height="15.0" fill="rgb(230,229,36)" rx="2" ry="2" />
+<text  x="65.02" y="1935.5" ></text>
+</g>
+<g >
+<title>sort1 (472 samples, 18.75%)</title><rect x="965.1" y="1525" width="221.2" height="15.0" fill="rgb(216,3,5)" rx="2" ry="2" />
+<text  x="968.06" y="1535.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="218.1" y="1717" width="0.4" height="15.0" fill="rgb(238,9,45)" rx="2" ry="2" />
+<text  x="221.07" y="1727.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1893" width="0.9" height="15.0" fill="rgb(208,157,22)" rx="2" ry="2" />
+<text  x="65.49" y="1903.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="26.4" y="1653" width="2.8" height="15.0" fill="rgb(241,105,20)" rx="2" ry="2" />
+<text  x="29.40" y="1663.5" ></text>
+</g>
+<g >
+<title>[Discord] (29 samples, 1.15%)</title><rect x="69.0" y="1925" width="13.6" height="15.0" fill="rgb(247,124,21)" rx="2" ry="2" />
+<text  x="72.05" y="1935.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1685" width="7.0" height="15.0" fill="rgb(207,68,11)" rx="2" ry="2" />
+<text  x="74.39" y="1695.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="36.7" y="1765" width="1.4" height="15.0" fill="rgb(246,69,9)" rx="2" ry="2" />
+<text  x="39.71" y="1775.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="53" width="0.9" height="15.0" fill="rgb(211,165,27)" rx="2" ry="2" />
+<text  x="65.49" y="63.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="357" width="0.9" height="15.0" fill="rgb(250,200,26)" rx="2" ry="2" />
+<text  x="65.49" y="367.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1317" width="0.9" height="15.0" fill="rgb(210,212,33)" rx="2" ry="2" />
+<text  x="65.49" y="1327.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1301" width="2.8" height="15.0" fill="rgb(226,177,48)" rx="2" ry="2" />
+<text  x="78.61" y="1311.5" ></text>
+</g>
+<g >
+<title>[chrome] (10 samples, 0.40%)</title><rect x="131.8" y="1701" width="4.7" height="15.0" fill="rgb(216,182,20)" rx="2" ry="2" />
+<text  x="134.84" y="1711.5" ></text>
+</g>
+<g >
+<title>[unknown] (18 samples, 0.71%)</title><rect x="245.7" y="2037" width="8.5" height="15.0" fill="rgb(234,46,29)" rx="2" ry="2" />
+<text  x="248.72" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (29 samples, 1.15%)</title><rect x="69.0" y="2021" width="13.6" height="15.0" fill="rgb(219,145,18)" rx="2" ry="2" />
+<text  x="72.05" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1893" width="0.5" height="15.0" fill="rgb(231,201,25)" rx="2" ry="2" />
+<text  x="123.13" y="1903.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1845" width="1.9" height="15.0" fill="rgb(220,147,23)" rx="2" ry="2" />
+<text  x="123.60" y="1855.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="35.3" y="1957" width="3.8" height="15.0" fill="rgb(235,71,12)" rx="2" ry="2" />
+<text  x="38.31" y="1967.5" ></text>
+</g>
+<g >
+<title>[chrome] (6 samples, 0.24%)</title><rect x="30.6" y="1861" width="2.8" height="15.0" fill="rgb(233,127,25)" rx="2" ry="2" />
+<text  x="33.62" y="1871.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="949" width="0.5" height="15.0" fill="rgb(208,30,17)" rx="2" ry="2" />
+<text  x="208.89" y="959.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1717" width="0.4" height="15.0" fill="rgb(248,225,20)" rx="2" ry="2" />
+<text  x="122.66" y="1727.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="2021" width="3.8" height="15.0" fill="rgb(242,155,8)" rx="2" ry="2" />
+<text  x="28.93" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (4 samples, 0.16%)</title><rect x="31.6" y="1797" width="1.8" height="15.0" fill="rgb(210,48,6)" rx="2" ry="2" />
+<text  x="34.56" y="1807.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="79.8" y="1573" width="0.5" height="15.0" fill="rgb(248,74,1)" rx="2" ry="2" />
+<text  x="82.83" y="1583.5" ></text>
+</g>
+<g >
+<title>chrome (161 samples, 6.39%)</title><rect x="162.8" y="2069" width="75.4" height="15.0" fill="rgb(231,40,49)" rx="2" ry="2" />
+<text  x="165.77" y="2079.5" >chrome</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="533" width="0.9" height="15.0" fill="rgb(209,43,23)" rx="2" ry="2" />
+<text  x="65.49" y="543.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1989" width="0.5" height="15.0" fill="rgb(247,66,18)" rx="2" ry="2" />
+<text  x="123.13" y="1999.5" ></text>
+</g>
+<g >
+<title>[chrome] (9 samples, 0.36%)</title><rect x="18.0" y="1797" width="4.2" height="15.0" fill="rgb(222,152,32)" rx="2" ry="2" />
+<text  x="20.97" y="1807.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1605" width="0.9" height="15.0" fill="rgb(208,18,4)" rx="2" ry="2" />
+<text  x="65.49" y="1615.5" ></text>
+</g>
+<g >
+<title>[Discord] (13 samples, 0.52%)</title><rect x="72.3" y="1429" width="6.1" height="15.0" fill="rgb(239,197,17)" rx="2" ry="2" />
+<text  x="75.33" y="1439.5" ></text>
+</g>
+<g >
+<title>ini_vector (23 samples, 0.91%)</title><rect x="296.8" y="2005" width="10.8" height="15.0" fill="rgb(217,192,32)" rx="2" ry="2" />
+<text  x="299.80" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (22 samples, 0.87%)</title><rect x="70.0" y="1765" width="10.3" height="15.0" fill="rgb(211,190,5)" rx="2" ry="2" />
+<text  x="72.98" y="1775.5" ></text>
+</g>
+<g >
+<title>v8::TryCatch::TryCatch (1 samples, 0.04%)</title><rect x="80.3" y="1797" width="0.5" height="15.0" fill="rgb(218,1,30)" rx="2" ry="2" />
+<text  x="83.29" y="1807.5" ></text>
+</g>
+<g >
+<title>[libcogl.so.20.4.1] (1 samples, 0.04%)</title><rect x="239.2" y="2053" width="0.4" height="15.0" fill="rgb(250,196,0)" rx="2" ry="2" />
+<text  x="242.16" y="2063.5" ></text>
+</g>
+<g >
+<title>[perf] (5 samples, 0.20%)</title><rect x="264.0" y="2021" width="2.3" height="15.0" fill="rgb(230,171,23)" rx="2" ry="2" />
+<text  x="267.00" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (3 samples, 0.12%)</title><rect x="231.7" y="1701" width="1.4" height="15.0" fill="rgb(209,213,45)" rx="2" ry="2" />
+<text  x="234.66" y="1711.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="26.9" y="1605" width="1.4" height="15.0" fill="rgb(246,159,42)" rx="2" ry="2" />
+<text  x="29.87" y="1615.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="137.0" y="1813" width="0.5" height="15.0" fill="rgb(248,174,46)" rx="2" ry="2" />
+<text  x="140.00" y="1823.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="821" width="0.5" height="15.0" fill="rgb(210,73,1)" rx="2" ry="2" />
+<text  x="208.89" y="831.5" ></text>
+</g>
+<g >
+<title>__clock_gettime (1 samples, 0.04%)</title><rect x="68.6" y="2005" width="0.4" height="15.0" fill="rgb(218,42,47)" rx="2" ry="2" />
+<text  x="71.58" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="1093" width="2.3" height="15.0" fill="rgb(226,159,45)" rx="2" ry="2" />
+<text  x="79.08" y="1103.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1173" width="0.9" height="15.0" fill="rgb(243,134,35)" rx="2" ry="2" />
+<text  x="65.49" y="1183.5" ></text>
+</g>
+<g >
+<title>[chrome] (27 samples, 1.07%)</title><rect x="124.8" y="1845" width="12.7" height="15.0" fill="rgb(237,148,50)" rx="2" ry="2" />
+<text  x="127.81" y="1855.5" ></text>
+</g>
+<g >
+<title>XPending (1 samples, 0.04%)</title><rect x="165.1" y="2005" width="0.5" height="15.0" fill="rgb(251,10,2)" rx="2" ry="2" />
+<text  x="168.12" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (32 samples, 1.27%)</title><rect x="122.5" y="2005" width="15.0" height="15.0" fill="rgb(252,87,9)" rx="2" ry="2" />
+<text  x="125.47" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (16 samples, 0.64%)</title><rect x="15.2" y="1877" width="7.5" height="15.0" fill="rgb(249,18,11)" rx="2" ry="2" />
+<text  x="18.15" y="1887.5" ></text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="997" width="2.3" height="15.0" fill="rgb(228,90,54)" rx="2" ry="2" />
+<text  x="79.08" y="1007.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1957" width="0.5" height="15.0" fill="rgb(211,34,1)" rx="2" ry="2" />
+<text  x="65.02" y="1967.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="965" width="0.5" height="15.0" fill="rgb(236,168,54)" rx="2" ry="2" />
+<text  x="208.89" y="975.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="885" width="0.5" height="15.0" fill="rgb(224,140,40)" rx="2" ry="2" />
+<text  x="208.89" y="895.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="32.0" y="1701" width="0.5" height="15.0" fill="rgb(213,34,22)" rx="2" ry="2" />
+<text  x="35.03" y="1711.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="869" width="1.9" height="15.0" fill="rgb(228,159,30)" rx="2" ry="2" />
+<text  x="79.54" y="879.5" ></text>
+</g>
+<g >
+<title>[chrome] (53 samples, 2.10%)</title><rect x="192.8" y="1589" width="24.8" height="15.0" fill="rgb(217,130,53)" rx="2" ry="2" />
+<text  x="195.76" y="1599.5" >[..</text>
+</g>
+<g >
+<title>[chrome] (34 samples, 1.35%)</title><rect x="39.1" y="2037" width="15.9" height="15.0" fill="rgb(205,96,27)" rx="2" ry="2" />
+<text  x="42.05" y="2047.5" ></text>
+</g>
+<g >
+<title>[perf-3424.map] (2 samples, 0.08%)</title><rect x="79.4" y="1669" width="0.9" height="15.0" fill="rgb(229,164,45)" rx="2" ry="2" />
+<text  x="82.36" y="1679.5" ></text>
+</g>
+<g >
+<title>[Discord] (14 samples, 0.56%)</title><rect x="55.0" y="2005" width="6.5" height="15.0" fill="rgb(237,42,27)" rx="2" ry="2" />
+<text  x="57.99" y="2015.5" ></text>
+</g>
+<g >
+<title>all (2,518 samples, 100%)</title><rect x="10.0" y="2085" width="1180.0" height="15.0" fill="rgb(248,188,10)" rx="2" ry="2" />
+<text  x="13.00" y="2095.5" ></text>
+</g>
+<g >
+<title>[chrome] (22 samples, 0.87%)</title><rect x="204.9" y="1333" width="10.4" height="15.0" fill="rgb(237,29,36)" rx="2" ry="2" />
+<text  x="207.95" y="1343.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1909" width="0.5" height="15.0" fill="rgb(225,228,28)" rx="2" ry="2" />
+<text  x="123.13" y="1919.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1957" width="0.9" height="15.0" fill="rgb(205,153,43)" rx="2" ry="2" />
+<text  x="65.49" y="1967.5" ></text>
+</g>
+<g >
+<title>[chrome] (18 samples, 0.71%)</title><rect x="226.5" y="1861" width="8.4" height="15.0" fill="rgb(224,159,13)" rx="2" ry="2" />
+<text  x="229.51" y="1871.5" ></text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="1141" width="2.3" height="15.0" fill="rgb(208,97,27)" rx="2" ry="2" />
+<text  x="79.08" y="1151.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="160.0" y="1909" width="0.4" height="15.0" fill="rgb(226,136,24)" rx="2" ry="2" />
+<text  x="162.96" y="1919.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (2 samples, 0.08%)</title><rect x="24.1" y="1941" width="0.9" height="15.0" fill="rgb(243,71,52)" rx="2" ry="2" />
+<text  x="27.06" y="1951.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="206.4" y="1301" width="0.4" height="15.0" fill="rgb(246,107,4)" rx="2" ry="2" />
+<text  x="209.35" y="1311.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (3 samples, 0.12%)</title><rect x="80.8" y="1877" width="1.4" height="15.0" fill="rgb(254,69,28)" rx="2" ry="2" />
+<text  x="83.76" y="1887.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1893" width="0.5" height="15.0" fill="rgb(242,189,5)" rx="2" ry="2" />
+<text  x="65.02" y="1903.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1989" width="0.9" height="15.0" fill="rgb(247,224,39)" rx="2" ry="2" />
+<text  x="65.49" y="1999.5" ></text>
+</g>
+<g >
+<title>[unknown] (39 samples, 1.55%)</title><rect x="142.2" y="2037" width="18.2" height="15.0" fill="rgb(227,193,26)" rx="2" ry="2" />
+<text  x="145.15" y="2047.5" ></text>
+</g>
+<g >
+<title>_fini (1 samples, 0.04%)</title><rect x="10.5" y="1813" width="0.4" height="15.0" fill="rgb(237,204,6)" rx="2" ry="2" />
+<text  x="13.47" y="1823.5" ></text>
+</g>
+<g >
+<title>[chrome] (23 samples, 0.91%)</title><rect x="225.1" y="1957" width="10.8" height="15.0" fill="rgb(252,168,34)" rx="2" ry="2" />
+<text  x="228.10" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="629" width="1.9" height="15.0" fill="rgb(226,215,54)" rx="2" ry="2" />
+<text  x="79.54" y="639.5" ></text>
+</g>
+<g >
+<title>sort1 (57 samples, 2.26%)</title><rect x="1159.5" y="1349" width="26.8" height="15.0" fill="rgb(246,52,15)" rx="2" ry="2" />
+<text  x="1162.54" y="1359.5" >s..</text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="901" width="1.9" height="15.0" fill="rgb(242,78,15)" rx="2" ry="2" />
+<text  x="79.54" y="911.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="997" width="0.5" height="15.0" fill="rgb(205,98,25)" rx="2" ry="2" />
+<text  x="208.89" y="1007.5" ></text>
+</g>
+<g >
+<title>[chrome] (23 samples, 0.91%)</title><rect x="225.1" y="1989" width="10.8" height="15.0" fill="rgb(232,33,23)" rx="2" ry="2" />
+<text  x="228.10" y="1999.5" ></text>
+</g>
+<g >
+<title>native_irq_return_iret (3 samples, 0.12%)</title><rect x="307.6" y="2005" width="1.4" height="15.0" fill="rgb(216,220,27)" rx="2" ry="2" />
+<text  x="310.58" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (26 samples, 1.03%)</title><rect x="13.3" y="1989" width="12.2" height="15.0" fill="rgb(207,146,33)" rx="2" ry="2" />
+<text  x="16.28" y="1999.5" ></text>
+</g>
+<g >
+<title>[chrome] (4 samples, 0.16%)</title><rect x="50.3" y="1717" width="1.9" height="15.0" fill="rgb(226,27,6)" rx="2" ry="2" />
+<text  x="53.30" y="1727.5" ></text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="1061" width="2.3" height="15.0" fill="rgb(236,153,8)" rx="2" ry="2" />
+<text  x="79.08" y="1071.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1461" width="7.0" height="15.0" fill="rgb(243,83,45)" rx="2" ry="2" />
+<text  x="74.39" y="1471.5" ></text>
+</g>
+<g >
+<title>XextFindDisplay (1 samples, 0.04%)</title><rect x="238.7" y="2053" width="0.5" height="15.0" fill="rgb(252,65,32)" rx="2" ry="2" />
+<text  x="241.69" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="1877" width="3.8" height="15.0" fill="rgb(246,60,1)" rx="2" ry="2" />
+<text  x="28.93" y="1887.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1845" width="0.9" height="15.0" fill="rgb(225,100,33)" rx="2" ry="2" />
+<text  x="65.49" y="1855.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="232.6" y="1637" width="0.5" height="15.0" fill="rgb(238,114,54)" rx="2" ry="2" />
+<text  x="235.60" y="1647.5" ></text>
+</g>
+<g >
+<title>[chrome] (51 samples, 2.03%)</title><rect x="193.7" y="1557" width="23.9" height="15.0" fill="rgb(242,114,54)" rx="2" ry="2" />
+<text  x="196.70" y="1567.5" >[..</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="121.5" y="1797" width="1.0" height="15.0" fill="rgb(210,103,42)" rx="2" ry="2" />
+<text  x="124.53" y="1807.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="216.7" y="1461" width="0.4" height="15.0" fill="rgb(222,102,28)" rx="2" ry="2" />
+<text  x="219.66" y="1471.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1605" width="0.4" height="15.0" fill="rgb(231,35,10)" rx="2" ry="2" />
+<text  x="122.66" y="1615.5" ></text>
+</g>
+<g >
+<title>[chrome] (19 samples, 0.75%)</title><rect x="128.1" y="1797" width="8.9" height="15.0" fill="rgb(251,43,6)" rx="2" ry="2" />
+<text  x="131.09" y="1807.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1333" width="0.9" height="15.0" fill="rgb(243,183,3)" rx="2" ry="2" />
+<text  x="65.49" y="1343.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="260.2" y="2037" width="0.5" height="15.0" fill="rgb(211,138,43)" rx="2" ry="2" />
+<text  x="263.25" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1045" width="0.9" height="15.0" fill="rgb(245,53,10)" rx="2" ry="2" />
+<text  x="65.49" y="1055.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="933" width="0.9" height="15.0" fill="rgb(233,97,47)" rx="2" ry="2" />
+<text  x="65.49" y="943.5" ></text>
+</g>
+<g >
+<title>[chrome] (23 samples, 0.91%)</title><rect x="225.1" y="1941" width="10.8" height="15.0" fill="rgb(210,24,21)" rx="2" ry="2" />
+<text  x="228.10" y="1951.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="19.8" y="1749" width="0.5" height="15.0" fill="rgb(246,56,12)" rx="2" ry="2" />
+<text  x="22.84" y="1759.5" ></text>
+</g>
+<g >
+<title>cogl_matrix_entry_get (1 samples, 0.04%)</title><rect x="254.2" y="2021" width="0.4" height="15.0" fill="rgb(250,156,46)" rx="2" ry="2" />
+<text  x="257.15" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="217.6" y="1621" width="0.5" height="15.0" fill="rgb(221,172,22)" rx="2" ry="2" />
+<text  x="220.60" y="1631.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="160.0" y="1877" width="0.4" height="15.0" fill="rgb(242,111,27)" rx="2" ry="2" />
+<text  x="162.96" y="1887.5" ></text>
+</g>
+<g >
+<title>[chrome] (10 samples, 0.40%)</title><rect x="131.8" y="1685" width="4.7" height="15.0" fill="rgb(243,129,53)" rx="2" ry="2" />
+<text  x="134.84" y="1695.5" ></text>
+</g>
+<g >
+<title>[chrome] (111 samples, 4.41%)</title><rect x="171.2" y="1813" width="52.0" height="15.0" fill="rgb(252,22,0)" rx="2" ry="2" />
+<text  x="174.21" y="1823.5" >[chro..</text>
+</g>
+<g >
+<title>[chrome] (32 samples, 1.27%)</title><rect x="122.5" y="1989" width="15.0" height="15.0" fill="rgb(241,86,14)" rx="2" ry="2" />
+<text  x="125.47" y="1999.5" ></text>
+</g>
+<g >
+<title>g_main_context_dispatch (23 samples, 0.91%)</title><rect x="225.1" y="2053" width="10.8" height="15.0" fill="rgb(217,143,33)" rx="2" ry="2" />
+<text  x="228.10" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="119.2" y="1829" width="0.9" height="15.0" fill="rgb(236,29,11)" rx="2" ry="2" />
+<text  x="122.19" y="1839.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1925" width="0.9" height="15.0" fill="rgb(225,139,3)" rx="2" ry="2" />
+<text  x="65.49" y="1935.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="20.3" y="1749" width="0.5" height="15.0" fill="rgb(238,118,10)" rx="2" ry="2" />
+<text  x="23.31" y="1759.5" ></text>
+</g>
+<g >
+<title>[chrome] (5 samples, 0.20%)</title><rect x="31.1" y="1829" width="2.3" height="15.0" fill="rgb(222,228,23)" rx="2" ry="2" />
+<text  x="34.09" y="1839.5" ></text>
+</g>
+<g >
+<title>sort1 (1,072 samples, 42.57%)</title><rect x="683.9" y="1717" width="502.4" height="15.0" fill="rgb(252,141,22)" rx="2" ry="2" />
+<text  x="686.88" y="1727.5" >sort1</text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="29.2" y="1717" width="0.5" height="15.0" fill="rgb(243,199,23)" rx="2" ry="2" />
+<text  x="32.21" y="1727.5" ></text>
+</g>
+<g >
+<title>Discord (48 samples, 1.91%)</title><rect x="62.5" y="2069" width="22.5" height="15.0" fill="rgb(244,18,21)" rx="2" ry="2" />
+<text  x="65.49" y="2079.5" >D..</text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="259.3" y="2037" width="0.5" height="15.0" fill="rgb(243,192,20)" rx="2" ry="2" />
+<text  x="262.31" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1669" width="0.9" height="15.0" fill="rgb(225,174,27)" rx="2" ry="2" />
+<text  x="65.49" y="1679.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1637" width="0.9" height="15.0" fill="rgb(247,64,35)" rx="2" ry="2" />
+<text  x="65.49" y="1647.5" ></text>
+</g>
+<g >
+<title>[unknown] (54 samples, 2.14%)</title><rect x="137.5" y="2053" width="25.3" height="15.0" fill="rgb(229,41,33)" rx="2" ry="2" />
+<text  x="140.47" y="2063.5" >[..</text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="82.6" y="2005" width="1.9" height="15.0" fill="rgb(244,76,7)" rx="2" ry="2" />
+<text  x="85.64" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="85.0" y="2005" width="0.4" height="15.0" fill="rgb(244,192,13)" rx="2" ry="2" />
+<text  x="87.98" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1941" width="0.9" height="15.0" fill="rgb(224,188,52)" rx="2" ry="2" />
+<text  x="65.49" y="1951.5" ></text>
+</g>
+<g >
+<title>[chrome] (26 samples, 1.03%)</title><rect x="13.3" y="2005" width="12.2" height="15.0" fill="rgb(240,100,3)" rx="2" ry="2" />
+<text  x="16.28" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (4 samples, 0.16%)</title><rect x="31.6" y="1781" width="1.8" height="15.0" fill="rgb(224,135,31)" rx="2" ry="2" />
+<text  x="34.56" y="1791.5" ></text>
+</g>
+<g >
+<title>[Discord] (13 samples, 0.52%)</title><rect x="55.5" y="1861" width="6.0" height="15.0" fill="rgb(222,168,36)" rx="2" ry="2" />
+<text  x="58.46" y="1871.5" ></text>
+</g>
+<g >
+<title>[chrome] (23 samples, 0.91%)</title><rect x="225.1" y="2005" width="10.8" height="15.0" fill="rgb(238,48,4)" rx="2" ry="2" />
+<text  x="228.10" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="661" width="1.9" height="15.0" fill="rgb(247,64,10)" rx="2" ry="2" />
+<text  x="79.54" y="671.5" ></text>
+</g>
+<g >
+<title>[libcjs.so.0.0.0] (1 samples, 0.04%)</title><rect x="247.1" y="2021" width="0.5" height="15.0" fill="rgb(217,11,0)" rx="2" ry="2" />
+<text  x="250.12" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (3 samples, 0.12%)</title><rect x="31.6" y="1765" width="1.4" height="15.0" fill="rgb(223,64,44)" rx="2" ry="2" />
+<text  x="34.56" y="1775.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="901" width="0.9" height="15.0" fill="rgb(236,164,52)" rx="2" ry="2" />
+<text  x="65.49" y="911.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="917" width="0.5" height="15.0" fill="rgb(207,160,43)" rx="2" ry="2" />
+<text  x="208.89" y="927.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="35.8" y="1861" width="3.3" height="15.0" fill="rgb(214,185,12)" rx="2" ry="2" />
+<text  x="38.77" y="1871.5" ></text>
+</g>
+<g >
+<title>__memcmp_sse4_1 (1 samples, 0.04%)</title><rect x="38.1" y="1781" width="0.5" height="15.0" fill="rgb(215,106,5)" rx="2" ry="2" />
+<text  x="41.12" y="1791.5" ></text>
+</g>
+<g >
+<title>strlen (2 samples, 0.08%)</title><rect x="28.3" y="1637" width="0.9" height="15.0" fill="rgb(236,40,22)" rx="2" ry="2" />
+<text  x="31.28" y="1647.5" ></text>
+</g>
+<g >
+<title>[chrome] (60 samples, 2.38%)</title><rect x="189.5" y="1653" width="28.1" height="15.0" fill="rgb(207,27,6)" rx="2" ry="2" />
+<text  x="192.48" y="1663.5" >[..</text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="10.5" y="1845" width="0.4" height="15.0" fill="rgb(233,53,24)" rx="2" ry="2" />
+<text  x="13.47" y="1855.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1589" width="0.4" height="15.0" fill="rgb(235,201,17)" rx="2" ry="2" />
+<text  x="122.66" y="1599.5" ></text>
+</g>
+<g >
+<title>sort1 (122 samples, 4.85%)</title><rect x="1129.1" y="1397" width="57.2" height="15.0" fill="rgb(250,206,8)" rx="2" ry="2" />
+<text  x="1132.08" y="1407.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (34 samples, 1.35%)</title><rect x="200.3" y="1429" width="15.9" height="15.0" fill="rgb(215,22,10)" rx="2" ry="2" />
+<text  x="203.26" y="1439.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1973" width="1.9" height="15.0" fill="rgb(231,1,27)" rx="2" ry="2" />
+<text  x="123.60" y="1983.5" ></text>
+</g>
+<g >
+<title>start_thread (36 samples, 1.43%)</title><rect x="120.6" y="2053" width="16.9" height="15.0" fill="rgb(235,80,10)" rx="2" ry="2" />
+<text  x="123.60" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1909" width="0.9" height="15.0" fill="rgb(228,229,23)" rx="2" ry="2" />
+<text  x="65.49" y="1919.5" ></text>
+</g>
+<g >
+<title>[chrome] (23 samples, 0.91%)</title><rect x="225.1" y="2021" width="10.8" height="15.0" fill="rgb(239,97,19)" rx="2" ry="2" />
+<text  x="228.10" y="2031.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="10.5" y="1829" width="0.4" height="15.0" fill="rgb(248,103,17)" rx="2" ry="2" />
+<text  x="13.47" y="1839.5" ></text>
+</g>
+<g >
+<title>sort1 (287 samples, 11.40%)</title><rect x="1051.8" y="1461" width="134.5" height="15.0" fill="rgb(250,73,47)" rx="2" ry="2" />
+<text  x="1054.76" y="1471.5" >sort1</text>
+</g>
+<g >
+<title>g_private_get (1 samples, 0.04%)</title><rect x="84.5" y="2053" width="0.5" height="15.0" fill="rgb(222,156,52)" rx="2" ry="2" />
+<text  x="87.51" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1573" width="7.0" height="15.0" fill="rgb(239,11,35)" rx="2" ry="2" />
+<text  x="74.39" y="1583.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="217.6" y="1653" width="0.5" height="15.0" fill="rgb(234,33,52)" rx="2" ry="2" />
+<text  x="220.60" y="1663.5" ></text>
+</g>
+<g >
+<title>[chrome] (10 samples, 0.40%)</title><rect x="17.5" y="1829" width="4.7" height="15.0" fill="rgb(226,152,52)" rx="2" ry="2" />
+<text  x="20.50" y="1839.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1221" width="2.8" height="15.0" fill="rgb(244,98,24)" rx="2" ry="2" />
+<text  x="78.61" y="1231.5" ></text>
+</g>
+<g >
+<title>[Discord] (12 samples, 0.48%)</title><rect x="72.8" y="1397" width="5.6" height="15.0" fill="rgb(250,139,48)" rx="2" ry="2" />
+<text  x="75.80" y="1407.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="234.5" y="1781" width="0.4" height="15.0" fill="rgb(231,209,7)" rx="2" ry="2" />
+<text  x="237.47" y="1791.5" ></text>
+</g>
+<g >
+<title>Chrome_IOThread (21 samples, 0.83%)</title><rect x="25.5" y="2069" width="9.8" height="15.0" fill="rgb(251,21,26)" rx="2" ry="2" />
+<text  x="28.46" y="2079.5" ></text>
+</g>
+<g >
+<title>[chrome] (34 samples, 1.35%)</title><rect x="39.1" y="2005" width="15.9" height="15.0" fill="rgb(254,209,13)" rx="2" ry="2" />
+<text  x="42.05" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (6 samples, 0.24%)</title><rect x="117.3" y="1845" width="2.8" height="15.0" fill="rgb(249,84,28)" rx="2" ry="2" />
+<text  x="120.32" y="1855.5" ></text>
+</g>
+<g >
+<title>[chrome] (4 samples, 0.16%)</title><rect x="50.3" y="1685" width="1.9" height="15.0" fill="rgb(230,105,6)" rx="2" ry="2" />
+<text  x="53.30" y="1695.5" ></text>
+</g>
+<g >
+<title>[Discord] (10 samples, 0.40%)</title><rect x="56.9" y="1781" width="4.6" height="15.0" fill="rgb(208,211,2)" rx="2" ry="2" />
+<text  x="59.86" y="1791.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="218.5" y="1749" width="0.5" height="15.0" fill="rgb(230,136,21)" rx="2" ry="2" />
+<text  x="221.54" y="1759.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="10.0" y="2053" width="0.5" height="15.0" fill="rgb(216,61,7)" rx="2" ry="2" />
+<text  x="13.00" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="549" width="0.9" height="15.0" fill="rgb(232,47,1)" rx="2" ry="2" />
+<text  x="65.49" y="559.5" ></text>
+</g>
+<g >
+<title>[Discord] (24 samples, 0.95%)</title><rect x="69.5" y="1829" width="11.3" height="15.0" fill="rgb(216,110,23)" rx="2" ry="2" />
+<text  x="72.52" y="1839.5" ></text>
+</g>
+<g >
+<title>[chrome] (12 samples, 0.48%)</title><rect x="29.7" y="1957" width="5.6" height="15.0" fill="rgb(218,28,0)" rx="2" ry="2" />
+<text  x="32.68" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="869" width="0.9" height="15.0" fill="rgb(210,87,6)" rx="2" ry="2" />
+<text  x="65.49" y="879.5" ></text>
+</g>
+<g >
+<title>[unknown] (4 samples, 0.16%)</title><rect x="1187.2" y="2037" width="1.9" height="15.0" fill="rgb(229,120,5)" rx="2" ry="2" />
+<text  x="1190.19" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (39 samples, 1.55%)</title><rect x="198.9" y="1493" width="18.2" height="15.0" fill="rgb(249,206,50)" rx="2" ry="2" />
+<text  x="201.86" y="1503.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="10.5" y="2037" width="2.8" height="15.0" fill="rgb(211,8,32)" rx="2" ry="2" />
+<text  x="13.47" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1573" width="0.9" height="15.0" fill="rgb(220,186,1)" rx="2" ry="2" />
+<text  x="65.49" y="1583.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="677" width="1.9" height="15.0" fill="rgb(215,197,19)" rx="2" ry="2" />
+<text  x="79.54" y="687.5" ></text>
+</g>
+<g >
+<title>sort1 (1,215 samples, 48.25%)</title><rect x="616.9" y="1765" width="569.4" height="15.0" fill="rgb(212,171,17)" rx="2" ry="2" />
+<text  x="619.87" y="1775.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="245" width="0.9" height="15.0" fill="rgb(211,121,40)" rx="2" ry="2" />
+<text  x="65.49" y="255.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="2053" width="0.9" height="15.0" fill="rgb(254,47,26)" rx="2" ry="2" />
+<text  x="65.49" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (125 samples, 4.96%)</title><rect x="165.6" y="1909" width="58.6" height="15.0" fill="rgb(244,69,15)" rx="2" ry="2" />
+<text  x="168.58" y="1919.5" >[chrome]</text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="1109" width="2.3" height="15.0" fill="rgb(217,214,9)" rx="2" ry="2" />
+<text  x="79.08" y="1119.5" ></text>
+</g>
+<g >
+<title>[Discord] (13 samples, 0.52%)</title><rect x="55.5" y="1893" width="6.0" height="15.0" fill="rgb(220,122,22)" rx="2" ry="2" />
+<text  x="58.46" y="1903.5" ></text>
+</g>
+<g >
+<title>[perf-2330.map] (1 samples, 0.04%)</title><rect x="257.4" y="1893" width="0.5" height="15.0" fill="rgb(231,149,11)" rx="2" ry="2" />
+<text  x="260.43" y="1903.5" ></text>
+</g>
+<g >
+<title>[Discord] (29 samples, 1.15%)</title><rect x="69.0" y="1957" width="13.6" height="15.0" fill="rgb(206,159,2)" rx="2" ry="2" />
+<text  x="72.05" y="1967.5" ></text>
+</g>
+<g >
+<title>sort1 (1,254 samples, 49.80%)</title><rect x="598.6" y="1781" width="587.7" height="15.0" fill="rgb(226,184,53)" rx="2" ry="2" />
+<text  x="601.59" y="1791.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="35.8" y="1845" width="3.3" height="15.0" fill="rgb(226,216,31)" rx="2" ry="2" />
+<text  x="38.77" y="1855.5" ></text>
+</g>
+<g >
+<title>[unknown] (37 samples, 1.47%)</title><rect x="240.6" y="2053" width="17.3" height="15.0" fill="rgb(221,142,8)" rx="2" ry="2" />
+<text  x="243.56" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="485" width="0.9" height="15.0" fill="rgb(254,9,23)" rx="2" ry="2" />
+<text  x="65.49" y="495.5" ></text>
+</g>
+<g >
+<title>[chrome] (12 samples, 0.48%)</title><rect x="29.7" y="2005" width="5.6" height="15.0" fill="rgb(228,37,38)" rx="2" ry="2" />
+<text  x="32.68" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="76.5" y="453" width="1.5" height="15.0" fill="rgb(242,158,41)" rx="2" ry="2" />
+<text  x="79.54" y="463.5" ></text>
+</g>
+<g >
+<title>sort1 (1,867 samples, 74.15%)</title><rect x="311.3" y="2005" width="875.0" height="15.0" fill="rgb(215,188,42)" rx="2" ry="2" />
+<text  x="314.33" y="2015.5" >sort1</text>
+</g>
+<g >
+<title>g_base_info_ref (1 samples, 0.04%)</title><rect x="255.1" y="2037" width="0.5" height="15.0" fill="rgb(250,125,1)" rx="2" ry="2" />
+<text  x="258.09" y="2047.5" ></text>
+</g>
+<g >
+<title>[libc-2.23.so] (2 samples, 0.08%)</title><rect x="23.1" y="1941" width="1.0" height="15.0" fill="rgb(243,124,0)" rx="2" ry="2" />
+<text  x="26.12" y="1951.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="821" width="1.9" height="15.0" fill="rgb(227,152,54)" rx="2" ry="2" />
+<text  x="79.54" y="831.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1909" width="0.5" height="15.0" fill="rgb(226,79,2)" rx="2" ry="2" />
+<text  x="88.92" y="1919.5" ></text>
+</g>
+<g >
+<title>[perf-3795.map] (1 samples, 0.04%)</title><rect x="217.6" y="1573" width="0.5" height="15.0" fill="rgb(219,61,15)" rx="2" ry="2" />
+<text  x="220.60" y="1583.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="79.4" y="1701" width="0.9" height="15.0" fill="rgb(212,62,2)" rx="2" ry="2" />
+<text  x="82.36" y="1711.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="853" width="0.5" height="15.0" fill="rgb(229,156,39)" rx="2" ry="2" />
+<text  x="208.89" y="863.5" ></text>
+</g>
+<g >
+<title>[Discord] (29 samples, 1.15%)</title><rect x="69.0" y="1989" width="13.6" height="15.0" fill="rgb(254,70,5)" rx="2" ry="2" />
+<text  x="72.05" y="1999.5" ></text>
+</g>
+<g >
+<title>sort1 (974 samples, 38.68%)</title><rect x="729.8" y="1685" width="456.5" height="15.0" fill="rgb(235,71,42)" rx="2" ry="2" />
+<text  x="732.81" y="1695.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1125" width="0.5" height="15.0" fill="rgb(249,89,44)" rx="2" ry="2" />
+<text  x="208.89" y="1135.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1253" width="2.8" height="15.0" fill="rgb(254,83,48)" rx="2" ry="2" />
+<text  x="78.61" y="1263.5" ></text>
+</g>
+<g >
+<title>[Discord] (9 samples, 0.36%)</title><rect x="57.3" y="1733" width="4.2" height="15.0" fill="rgb(244,197,42)" rx="2" ry="2" />
+<text  x="60.33" y="1743.5" ></text>
+</g>
+<g >
+<title>[chrome] (72 samples, 2.86%)</title><rect x="86.4" y="2021" width="33.7" height="15.0" fill="rgb(218,179,52)" rx="2" ry="2" />
+<text  x="89.39" y="2031.5" >[c..</text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1541" width="7.0" height="15.0" fill="rgb(211,149,33)" rx="2" ry="2" />
+<text  x="74.39" y="1551.5" ></text>
+</g>
+<g >
+<title>[chrome] (72 samples, 2.86%)</title><rect x="86.4" y="1989" width="33.7" height="15.0" fill="rgb(230,95,13)" rx="2" ry="2" />
+<text  x="89.39" y="1999.5" >[c..</text>
+</g>
+<g >
+<title>[chrome] (6 samples, 0.24%)</title><rect x="30.6" y="1909" width="2.8" height="15.0" fill="rgb(219,127,42)" rx="2" ry="2" />
+<text  x="33.62" y="1919.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="19.8" y="1733" width="0.5" height="15.0" fill="rgb(253,141,46)" rx="2" ry="2" />
+<text  x="22.84" y="1743.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1173" width="0.5" height="15.0" fill="rgb(234,28,14)" rx="2" ry="2" />
+<text  x="208.89" y="1183.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="76.5" y="437" width="1.5" height="15.0" fill="rgb(216,51,31)" rx="2" ry="2" />
+<text  x="79.54" y="447.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="421" width="0.9" height="15.0" fill="rgb(208,201,10)" rx="2" ry="2" />
+<text  x="65.49" y="431.5" ></text>
+</g>
+<g >
+<title>start_thread (72 samples, 2.86%)</title><rect x="86.4" y="2053" width="33.7" height="15.0" fill="rgb(248,163,13)" rx="2" ry="2" />
+<text  x="89.39" y="2063.5" >st..</text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1605" width="7.0" height="15.0" fill="rgb(251,81,2)" rx="2" ry="2" />
+<text  x="74.39" y="1615.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="22.2" y="1829" width="0.5" height="15.0" fill="rgb(206,2,2)" rx="2" ry="2" />
+<text  x="25.18" y="1839.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1973" width="0.5" height="15.0" fill="rgb(214,47,49)" rx="2" ry="2" />
+<text  x="65.02" y="1983.5" ></text>
+</g>
+<g >
+<title>[perf] (5 samples, 0.20%)</title><rect x="264.0" y="1989" width="2.3" height="15.0" fill="rgb(228,85,13)" rx="2" ry="2" />
+<text  x="267.00" y="1999.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1269" width="2.8" height="15.0" fill="rgb(217,174,16)" rx="2" ry="2" />
+<text  x="78.61" y="1279.5" ></text>
+</g>
+<g >
+<title>[libc-2.23.so] (1 samples, 0.04%)</title><rect x="163.2" y="2053" width="0.5" height="15.0" fill="rgb(223,166,49)" rx="2" ry="2" />
+<text  x="166.24" y="2063.5" ></text>
+</g>
+<g >
+<title>main (1,958 samples, 77.76%)</title><rect x="268.7" y="2021" width="917.6" height="15.0" fill="rgb(215,11,45)" rx="2" ry="2" />
+<text  x="271.68" y="2031.5" >main</text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="76.5" y="501" width="1.5" height="15.0" fill="rgb(242,229,27)" rx="2" ry="2" />
+<text  x="79.54" y="511.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="69" width="0.9" height="15.0" fill="rgb(250,209,5)" rx="2" ry="2" />
+<text  x="65.49" y="79.5" ></text>
+</g>
+<g >
+<title>[chrome] (55 samples, 2.18%)</title><rect x="191.8" y="1605" width="25.8" height="15.0" fill="rgb(218,137,8)" rx="2" ry="2" />
+<text  x="194.83" y="1615.5" >[..</text>
+</g>
+<g >
+<title>[chrome] (22 samples, 0.87%)</title><rect x="204.9" y="1349" width="10.4" height="15.0" fill="rgb(216,46,10)" rx="2" ry="2" />
+<text  x="207.95" y="1359.5" ></text>
+</g>
+<g >
+<title>ThreadPoolServi (1 samples, 0.04%)</title><rect x="120.1" y="2069" width="0.5" height="15.0" fill="rgb(223,148,34)" rx="2" ry="2" />
+<text  x="123.13" y="2079.5" ></text>
+</g>
+<g >
+<title>g_mutex_unlock (1 samples, 0.04%)</title><rect x="256.0" y="2037" width="0.5" height="15.0" fill="rgb(215,21,45)" rx="2" ry="2" />
+<text  x="259.03" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1781" width="0.4" height="15.0" fill="rgb(216,190,51)" rx="2" ry="2" />
+<text  x="122.66" y="1791.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="27.8" y="1557" width="0.5" height="15.0" fill="rgb(212,91,5)" rx="2" ry="2" />
+<text  x="30.81" y="1567.5" ></text>
+</g>
+<g >
+<title>pulseaudio (1 samples, 0.04%)</title><rect x="268.2" y="2069" width="0.5" height="15.0" fill="rgb(220,119,35)" rx="2" ry="2" />
+<text  x="271.21" y="2079.5" ></text>
+</g>
+<g >
+<title>[chrome] (88 samples, 3.49%)</title><rect x="176.8" y="1733" width="41.3" height="15.0" fill="rgb(240,8,4)" rx="2" ry="2" />
+<text  x="179.83" y="1743.5" >[ch..</text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="35.8" y="1813" width="3.3" height="15.0" fill="rgb(207,45,23)" rx="2" ry="2" />
+<text  x="38.77" y="1823.5" ></text>
+</g>
+<g >
+<title>sort1 (836 samples, 33.20%)</title><rect x="794.5" y="1637" width="391.8" height="15.0" fill="rgb(215,170,38)" rx="2" ry="2" />
+<text  x="797.48" y="1647.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1925" width="0.5" height="15.0" fill="rgb(210,198,2)" rx="2" ry="2" />
+<text  x="88.92" y="1935.5" ></text>
+</g>
+<g >
+<title>[Discord] (14 samples, 0.56%)</title><rect x="55.0" y="1989" width="6.5" height="15.0" fill="rgb(222,227,52)" rx="2" ry="2" />
+<text  x="57.99" y="1999.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="917" width="0.9" height="15.0" fill="rgb(210,183,38)" rx="2" ry="2" />
+<text  x="65.49" y="927.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="37.2" y="1749" width="0.9" height="15.0" fill="rgb(237,56,2)" rx="2" ry="2" />
+<text  x="40.18" y="1759.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="84.0" y="1877" width="0.5" height="15.0" fill="rgb(214,20,42)" rx="2" ry="2" />
+<text  x="87.04" y="1887.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1509" width="0.9" height="15.0" fill="rgb(232,91,28)" rx="2" ry="2" />
+<text  x="65.49" y="1519.5" ></text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="59.2" y="1701" width="2.3" height="15.0" fill="rgb(221,189,29)" rx="2" ry="2" />
+<text  x="62.21" y="1711.5" ></text>
+</g>
+<g >
+<title>start_thread (1 samples, 0.04%)</title><rect x="85.0" y="2053" width="0.4" height="15.0" fill="rgb(224,180,31)" rx="2" ry="2" />
+<text  x="87.98" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (12 samples, 0.48%)</title><rect x="29.7" y="1941" width="5.6" height="15.0" fill="rgb(251,31,13)" rx="2" ry="2" />
+<text  x="32.68" y="1951.5" ></text>
+</g>
+<g >
+<title>XNextEvent@plt (1 samples, 0.04%)</title><rect x="246.7" y="2021" width="0.4" height="15.0" fill="rgb(254,91,13)" rx="2" ry="2" />
+<text  x="249.66" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="26.4" y="1685" width="2.8" height="15.0" fill="rgb(244,43,51)" rx="2" ry="2" />
+<text  x="29.40" y="1695.5" ></text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="61.5" y="2021" width="1.0" height="15.0" fill="rgb(218,106,10)" rx="2" ry="2" />
+<text  x="64.55" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="757" width="0.9" height="15.0" fill="rgb(242,9,19)" rx="2" ry="2" />
+<text  x="65.49" y="767.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="35.3" y="2021" width="3.8" height="15.0" fill="rgb(243,211,21)" rx="2" ry="2" />
+<text  x="38.31" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1797" width="0.9" height="15.0" fill="rgb(246,171,43)" rx="2" ry="2" />
+<text  x="65.49" y="1807.5" ></text>
+</g>
+<g >
+<title>[chrome] (32 samples, 1.27%)</title><rect x="122.5" y="1941" width="15.0" height="15.0" fill="rgb(225,17,31)" rx="2" ry="2" />
+<text  x="125.47" y="1951.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="238.2" y="2053" width="0.5" height="15.0" fill="rgb(214,223,10)" rx="2" ry="2" />
+<text  x="241.22" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="37.2" y="1733" width="0.9" height="15.0" fill="rgb(222,40,27)" rx="2" ry="2" />
+<text  x="40.18" y="1743.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1621" width="0.4" height="15.0" fill="rgb(251,108,41)" rx="2" ry="2" />
+<text  x="122.66" y="1631.5" ></text>
+</g>
+<g >
+<title>sort1 (1,530 samples, 60.76%)</title><rect x="469.3" y="1877" width="717.0" height="15.0" fill="rgb(205,199,13)" rx="2" ry="2" />
+<text  x="472.25" y="1887.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1813" width="0.5" height="15.0" fill="rgb(217,200,34)" rx="2" ry="2" />
+<text  x="123.13" y="1823.5" ></text>
+</g>
+<g >
+<title>[chrome] (23 samples, 0.91%)</title><rect x="43.3" y="1829" width="10.8" height="15.0" fill="rgb(223,183,49)" rx="2" ry="2" />
+<text  x="46.27" y="1839.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="82.6" y="1989" width="1.9" height="15.0" fill="rgb(213,129,44)" rx="2" ry="2" />
+<text  x="85.64" y="1999.5" ></text>
+</g>
+<g >
+<title>cinnamon-screen (1 samples, 0.04%)</title><rect x="238.2" y="2069" width="0.5" height="15.0" fill="rgb(252,146,11)" rx="2" ry="2" />
+<text  x="241.22" y="2079.5" ></text>
+</g>
+<g >
+<title>sort1 (422 samples, 16.76%)</title><rect x="988.5" y="1509" width="197.8" height="15.0" fill="rgb(247,193,9)" rx="2" ry="2" />
+<text  x="991.49" y="1519.5" >sort1</text>
+</g>
+<g >
+<title>[chrome] (20 samples, 0.79%)</title><rect x="44.7" y="1813" width="9.4" height="15.0" fill="rgb(230,58,11)" rx="2" ry="2" />
+<text  x="47.68" y="1823.5" ></text>
+</g>
+<g >
+<title>[chrome] (125 samples, 4.96%)</title><rect x="165.6" y="1989" width="58.6" height="15.0" fill="rgb(215,18,26)" rx="2" ry="2" />
+<text  x="168.58" y="1999.5" >[chrome]</text>
+</g>
+<g >
+<title>Xorg (54 samples, 2.14%)</title><rect x="137.5" y="2069" width="25.3" height="15.0" fill="rgb(219,151,34)" rx="2" ry="2" />
+<text  x="140.47" y="2079.5" >X..</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="389" width="0.9" height="15.0" fill="rgb(250,136,35)" rx="2" ry="2" />
+<text  x="65.49" y="399.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="1957" width="1.9" height="15.0" fill="rgb(231,13,9)" rx="2" ry="2" />
+<text  x="123.60" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="37.6" y="1701" width="0.5" height="15.0" fill="rgb(246,157,24)" rx="2" ry="2" />
+<text  x="40.65" y="1711.5" ></text>
+</g>
+<g >
+<title>sort1 (1,804 samples, 71.64%)</title><rect x="340.8" y="1973" width="845.5" height="15.0" fill="rgb(252,17,27)" rx="2" ry="2" />
+<text  x="343.85" y="1983.5" >sort1</text>
+</g>
+<g >
+<title>sort1 (17 samples, 0.68%)</title><rect x="1178.3" y="1301" width="8.0" height="15.0" fill="rgb(242,112,17)" rx="2" ry="2" />
+<text  x="1181.28" y="1311.5" ></text>
+</g>
+<g >
+<title>[chrome] (125 samples, 4.96%)</title><rect x="165.6" y="1973" width="58.6" height="15.0" fill="rgb(212,205,10)" rx="2" ry="2" />
+<text  x="168.58" y="1983.5" >[chrome]</text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="224.2" y="2037" width="0.4" height="15.0" fill="rgb(212,183,36)" rx="2" ry="2" />
+<text  x="227.16" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="645" width="1.9" height="15.0" fill="rgb(251,197,1)" rx="2" ry="2" />
+<text  x="79.54" y="655.5" ></text>
+</g>
+<g >
+<title>[perf] (5 samples, 0.20%)</title><rect x="264.0" y="1957" width="2.3" height="15.0" fill="rgb(243,182,5)" rx="2" ry="2" />
+<text  x="267.00" y="1967.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="160.0" y="1893" width="0.4" height="15.0" fill="rgb(211,147,19)" rx="2" ry="2" />
+<text  x="162.96" y="1903.5" ></text>
+</g>
+<g >
+<title>[chrome] (72 samples, 2.86%)</title><rect x="86.4" y="2037" width="33.7" height="15.0" fill="rgb(223,153,34)" rx="2" ry="2" />
+<text  x="89.39" y="2047.5" >[c..</text>
+</g>
+<g >
+<title>[perf] (4 samples, 0.16%)</title><rect x="266.3" y="2005" width="1.9" height="15.0" fill="rgb(246,214,40)" rx="2" ry="2" />
+<text  x="269.34" y="2015.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="1845" width="0.5" height="15.0" fill="rgb(237,137,18)" rx="2" ry="2" />
+<text  x="123.13" y="1855.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="725" width="1.9" height="15.0" fill="rgb(215,220,5)" rx="2" ry="2" />
+<text  x="79.54" y="735.5" ></text>
+</g>
+<g >
+<title>[chrome] (36 samples, 1.43%)</title><rect x="199.3" y="1461" width="16.9" height="15.0" fill="rgb(208,9,15)" rx="2" ry="2" />
+<text  x="202.32" y="1471.5" ></text>
+</g>
+<g >
+<title>[unknown] (33 samples, 1.31%)</title><rect x="67.2" y="2053" width="15.4" height="15.0" fill="rgb(247,122,21)" rx="2" ry="2" />
+<text  x="70.17" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (23 samples, 0.91%)</title><rect x="70.0" y="1813" width="10.8" height="15.0" fill="rgb(234,90,4)" rx="2" ry="2" />
+<text  x="72.98" y="1823.5" ></text>
+</g>
+<g >
+<title>[chrome] (6 samples, 0.24%)</title><rect x="30.6" y="1877" width="2.8" height="15.0" fill="rgb(229,38,48)" rx="2" ry="2" />
+<text  x="33.62" y="1887.5" ></text>
+</g>
+<g >
+<title>[chrome] (72 samples, 2.86%)</title><rect x="86.4" y="1957" width="33.7" height="15.0" fill="rgb(222,2,15)" rx="2" ry="2" />
+<text  x="89.39" y="1967.5" >[c..</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1525" width="0.9" height="15.0" fill="rgb(238,117,19)" rx="2" ry="2" />
+<text  x="65.49" y="1535.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="981" width="0.9" height="15.0" fill="rgb(237,116,49)" rx="2" ry="2" />
+<text  x="65.49" y="991.5" ></text>
+</g>
+<g >
+<title>[Discord] (1 samples, 0.04%)</title><rect x="85.0" y="1989" width="0.4" height="15.0" fill="rgb(251,165,2)" rx="2" ry="2" />
+<text  x="87.98" y="1999.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="373" width="0.9" height="15.0" fill="rgb(230,162,17)" rx="2" ry="2" />
+<text  x="65.49" y="383.5" ></text>
+</g>
+<g >
+<title>__libc_start_main (1,958 samples, 77.76%)</title><rect x="268.7" y="2037" width="917.6" height="15.0" fill="rgb(230,146,17)" rx="2" ry="2" />
+<text  x="271.68" y="2047.5" >__libc_start_main</text>
+</g>
+<g >
+<title>[chrome] (11 samples, 0.44%)</title><rect x="228.8" y="1797" width="5.2" height="15.0" fill="rgb(228,16,20)" rx="2" ry="2" />
+<text  x="231.85" y="1807.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="277" width="0.9" height="15.0" fill="rgb(236,228,23)" rx="2" ry="2" />
+<text  x="65.49" y="287.5" ></text>
+</g>
+<g >
+<title>[chrome] (125 samples, 4.96%)</title><rect x="165.6" y="1893" width="58.6" height="15.0" fill="rgb(250,25,21)" rx="2" ry="2" />
+<text  x="168.58" y="1903.5" >[chrome]</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="517" width="0.9" height="15.0" fill="rgb(220,136,52)" rx="2" ry="2" />
+<text  x="65.49" y="527.5" ></text>
+</g>
+<g >
+<title>[unknown] (5 samples, 0.20%)</title><rect x="264.0" y="2053" width="2.3" height="15.0" fill="rgb(241,64,1)" rx="2" ry="2" />
+<text  x="267.00" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1893" width="0.5" height="15.0" fill="rgb(243,39,53)" rx="2" ry="2" />
+<text  x="88.92" y="1903.5" ></text>
+</g>
+<g >
+<title>[chrome] (29 samples, 1.15%)</title><rect x="123.9" y="1861" width="13.6" height="15.0" fill="rgb(224,58,41)" rx="2" ry="2" />
+<text  x="126.88" y="1871.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1653" width="0.9" height="15.0" fill="rgb(247,41,42)" rx="2" ry="2" />
+<text  x="65.49" y="1663.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1829" width="0.9" height="15.0" fill="rgb(225,219,33)" rx="2" ry="2" />
+<text  x="65.49" y="1839.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="54.1" y="1925" width="0.4" height="15.0" fill="rgb(228,198,42)" rx="2" ry="2" />
+<text  x="57.05" y="1935.5" ></text>
+</g>
+<g >
+<title>[libglib-2.0.so.0.4800.2] (3 samples, 0.12%)</title><rect x="248.1" y="2021" width="1.4" height="15.0" fill="rgb(233,81,9)" rx="2" ry="2" />
+<text  x="251.06" y="2031.5" ></text>
+</g>
+<g >
+<title>v8::Function::Call (2 samples, 0.08%)</title><rect x="79.4" y="1749" width="0.9" height="15.0" fill="rgb(211,125,50)" rx="2" ry="2" />
+<text  x="82.36" y="1759.5" ></text>
+</g>
+<g >
+<title>[chrome] (14 samples, 0.56%)</title><rect x="16.1" y="1845" width="6.6" height="15.0" fill="rgb(214,1,15)" rx="2" ry="2" />
+<text  x="19.09" y="1855.5" ></text>
+</g>
+<g >
+<title>[Discord] (13 samples, 0.52%)</title><rect x="55.5" y="1909" width="6.0" height="15.0" fill="rgb(225,13,36)" rx="2" ry="2" />
+<text  x="58.46" y="1919.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="268.2" y="2053" width="0.5" height="15.0" fill="rgb(226,216,36)" rx="2" ry="2" />
+<text  x="271.21" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="629" width="0.9" height="15.0" fill="rgb(221,54,37)" rx="2" ry="2" />
+<text  x="65.49" y="639.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="54.5" y="1941" width="0.5" height="15.0" fill="rgb(212,217,25)" rx="2" ry="2" />
+<text  x="57.52" y="1951.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1173" width="2.8" height="15.0" fill="rgb(214,84,44)" rx="2" ry="2" />
+<text  x="78.61" y="1183.5" ></text>
+</g>
+<g >
+<title>__memcpy_avx_unaligned (10 samples, 0.40%)</title><rect x="206.8" y="1301" width="4.7" height="15.0" fill="rgb(249,128,37)" rx="2" ry="2" />
+<text  x="209.82" y="1311.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.08%)</title><rect x="259.3" y="2053" width="0.9" height="15.0" fill="rgb(212,36,9)" rx="2" ry="2" />
+<text  x="262.31" y="2063.5" ></text>
+</g>
+<g >
+<title>syscall_return_via_sysret (1 samples, 0.04%)</title><rect x="34.8" y="1925" width="0.5" height="15.0" fill="rgb(247,125,43)" rx="2" ry="2" />
+<text  x="37.84" y="1935.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="79.4" y="1605" width="0.9" height="15.0" fill="rgb(210,142,32)" rx="2" ry="2" />
+<text  x="82.36" y="1615.5" ></text>
+</g>
+<g >
+<title>[chrome] (6 samples, 0.24%)</title><rect x="18.4" y="1765" width="2.8" height="15.0" fill="rgb(231,54,21)" rx="2" ry="2" />
+<text  x="21.44" y="1775.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="26.4" y="1733" width="3.3" height="15.0" fill="rgb(230,67,40)" rx="2" ry="2" />
+<text  x="29.40" y="1743.5" ></text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="205.4" y="1269" width="1.0" height="15.0" fill="rgb(236,68,37)" rx="2" ry="2" />
+<text  x="208.42" y="1279.5" ></text>
+</g>
+<g >
+<title>_fini (1 samples, 0.04%)</title><rect x="38.6" y="1781" width="0.5" height="15.0" fill="rgb(218,118,45)" rx="2" ry="2" />
+<text  x="41.59" y="1791.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="693" width="1.9" height="15.0" fill="rgb(233,150,17)" rx="2" ry="2" />
+<text  x="79.54" y="703.5" ></text>
+</g>
+<g >
+<title>g_main_context_check (1 samples, 0.04%)</title><rect x="224.6" y="2053" width="0.5" height="15.0" fill="rgb(247,162,32)" rx="2" ry="2" />
+<text  x="227.63" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (23 samples, 0.91%)</title><rect x="225.1" y="1973" width="10.8" height="15.0" fill="rgb(244,66,48)" rx="2" ry="2" />
+<text  x="228.10" y="1983.5" ></text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="205.4" y="1221" width="1.0" height="15.0" fill="rgb(217,162,46)" rx="2" ry="2" />
+<text  x="208.42" y="1231.5" ></text>
+</g>
+<g >
+<title>[chrome] (26 samples, 1.03%)</title><rect x="13.3" y="1973" width="12.2" height="15.0" fill="rgb(234,1,34)" rx="2" ry="2" />
+<text  x="16.28" y="1983.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1685" width="0.4" height="15.0" fill="rgb(205,16,7)" rx="2" ry="2" />
+<text  x="122.66" y="1695.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1525" width="7.0" height="15.0" fill="rgb(217,115,38)" rx="2" ry="2" />
+<text  x="74.39" y="1535.5" ></text>
+</g>
+<g >
+<title>[Discord] (12 samples, 0.48%)</title><rect x="55.9" y="1797" width="5.6" height="15.0" fill="rgb(234,12,49)" rx="2" ry="2" />
+<text  x="58.93" y="1807.5" ></text>
+</g>
+<g >
+<title>[chrome] (27 samples, 1.07%)</title><rect x="41.4" y="1877" width="12.7" height="15.0" fill="rgb(247,141,49)" rx="2" ry="2" />
+<text  x="44.40" y="1887.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="60.6" y="1637" width="0.9" height="15.0" fill="rgb(226,100,48)" rx="2" ry="2" />
+<text  x="63.61" y="1647.5" ></text>
+</g>
+<g >
+<title>[chrome] (39 samples, 1.55%)</title><rect x="198.9" y="1477" width="18.2" height="15.0" fill="rgb(234,97,44)" rx="2" ry="2" />
+<text  x="201.86" y="1487.5" ></text>
+</g>
+<g >
+<title>__vdso_clock_gettime (1 samples, 0.04%)</title><rect x="25.5" y="2021" width="0.4" height="15.0" fill="rgb(230,56,51)" rx="2" ry="2" />
+<text  x="28.46" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="325" width="0.9" height="15.0" fill="rgb(233,66,0)" rx="2" ry="2" />
+<text  x="65.49" y="335.5" ></text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="1125" width="2.3" height="15.0" fill="rgb(218,199,38)" rx="2" ry="2" />
+<text  x="79.08" y="1135.5" ></text>
+</g>
+<g >
+<title>[libnvidia-glcore.so.384.130] (1 samples, 0.04%)</title><rect x="85.4" y="2053" width="0.5" height="15.0" fill="rgb(221,127,24)" rx="2" ry="2" />
+<text  x="88.45" y="2063.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="216.2" y="1461" width="0.5" height="15.0" fill="rgb(232,169,13)" rx="2" ry="2" />
+<text  x="219.20" y="1471.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="981" width="0.5" height="15.0" fill="rgb(222,179,10)" rx="2" ry="2" />
+<text  x="208.89" y="991.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1701" width="0.4" height="15.0" fill="rgb(254,176,7)" rx="2" ry="2" />
+<text  x="122.66" y="1711.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="75.6" y="1157" width="2.8" height="15.0" fill="rgb(206,67,36)" rx="2" ry="2" />
+<text  x="78.61" y="1167.5" ></text>
+</g>
+<g >
+<title>[unknown] (5 samples, 0.20%)</title><rect x="251.3" y="2021" width="2.4" height="15.0" fill="rgb(228,224,14)" rx="2" ry="2" />
+<text  x="254.34" y="2031.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="120.1" y="2021" width="0.5" height="15.0" fill="rgb(245,40,39)" rx="2" ry="2" />
+<text  x="123.13" y="2031.5" ></text>
+</g>
+<g >
+<title>upowerd (1 samples, 0.04%)</title><rect x="1189.5" y="2069" width="0.5" height="15.0" fill="rgb(246,37,0)" rx="2" ry="2" />
+<text  x="1192.53" y="2079.5" ></text>
+</g>
+<g >
+<title>__cosf (1 samples, 0.04%)</title><rect x="215.7" y="1397" width="0.5" height="15.0" fill="rgb(227,168,4)" rx="2" ry="2" />
+<text  x="218.73" y="1407.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="26.4" y="1637" width="1.9" height="15.0" fill="rgb(252,120,13)" rx="2" ry="2" />
+<text  x="29.40" y="1647.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1733" width="0.9" height="15.0" fill="rgb(222,198,22)" rx="2" ry="2" />
+<text  x="65.49" y="1743.5" ></text>
+</g>
+<g >
+<title>[chrome] (26 samples, 1.03%)</title><rect x="13.3" y="2021" width="12.2" height="15.0" fill="rgb(224,22,54)" rx="2" ry="2" />
+<text  x="16.28" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1749" width="0.9" height="15.0" fill="rgb(224,2,51)" rx="2" ry="2" />
+<text  x="65.49" y="1759.5" ></text>
+</g>
+<g >
+<title>[Discord] (29 samples, 1.15%)</title><rect x="69.0" y="1973" width="13.6" height="15.0" fill="rgb(209,65,22)" rx="2" ry="2" />
+<text  x="72.05" y="1983.5" ></text>
+</g>
+<g >
+<title>__libc_start_main (5 samples, 0.20%)</title><rect x="264.0" y="2037" width="2.3" height="15.0" fill="rgb(233,203,49)" rx="2" ry="2" />
+<text  x="267.00" y="2047.5" ></text>
+</g>
+<g >
+<title>[perf] (5 samples, 0.20%)</title><rect x="264.0" y="1973" width="2.3" height="15.0" fill="rgb(227,216,42)" rx="2" ry="2" />
+<text  x="267.00" y="1983.5" ></text>
+</g>
+<g >
+<title>clutter_paint_volume_free (1 samples, 0.04%)</title><rect x="258.8" y="2053" width="0.5" height="15.0" fill="rgb(247,170,44)" rx="2" ry="2" />
+<text  x="261.84" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="77.0" y="373" width="1.0" height="15.0" fill="rgb(211,146,3)" rx="2" ry="2" />
+<text  x="80.01" y="383.5" ></text>
+</g>
+<g >
+<title>sort1 (2 samples, 0.08%)</title><rect x="1185.3" y="1221" width="1.0" height="15.0" fill="rgb(244,72,18)" rx="2" ry="2" />
+<text  x="1188.31" y="1231.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1749" width="0.5" height="15.0" fill="rgb(222,73,41)" rx="2" ry="2" />
+<text  x="88.92" y="1759.5" ></text>
+</g>
+<g >
+<title>[chrome] (29 samples, 1.15%)</title><rect x="202.1" y="1397" width="13.6" height="15.0" fill="rgb(211,68,52)" rx="2" ry="2" />
+<text  x="205.14" y="1407.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="885" width="0.9" height="15.0" fill="rgb(207,72,46)" rx="2" ry="2" />
+<text  x="65.49" y="895.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="232.6" y="1621" width="0.5" height="15.0" fill="rgb(244,190,13)" rx="2" ry="2" />
+<text  x="235.60" y="1631.5" ></text>
+</g>
+<g >
+<title>[chrome] (45 samples, 1.79%)</title><rect x="196.0" y="1525" width="21.1" height="15.0" fill="rgb(229,195,46)" rx="2" ry="2" />
+<text  x="199.04" y="1535.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="10.5" y="1893" width="0.9" height="15.0" fill="rgb(245,190,2)" rx="2" ry="2" />
+<text  x="13.47" y="1903.5" ></text>
+</g>
+<g >
+<title>[chrome] (15 samples, 0.60%)</title><rect x="113.1" y="1877" width="7.0" height="15.0" fill="rgb(231,152,46)" rx="2" ry="2" />
+<text  x="116.10" y="1887.5" ></text>
+</g>
+<g >
+<title>[perf] (4 samples, 0.16%)</title><rect x="266.3" y="2021" width="1.9" height="15.0" fill="rgb(247,9,2)" rx="2" ry="2" />
+<text  x="269.34" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (5 samples, 0.20%)</title><rect x="76.1" y="1013" width="2.3" height="15.0" fill="rgb(221,99,15)" rx="2" ry="2" />
+<text  x="79.08" y="1023.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="741" width="0.5" height="15.0" fill="rgb(247,182,35)" rx="2" ry="2" />
+<text  x="208.89" y="751.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="216.7" y="1445" width="0.4" height="15.0" fill="rgb(223,178,45)" rx="2" ry="2" />
+<text  x="219.66" y="1455.5" ></text>
+</g>
+<g >
+<title>[chrome] (12 samples, 0.48%)</title><rect x="29.7" y="2037" width="5.6" height="15.0" fill="rgb(239,79,44)" rx="2" ry="2" />
+<text  x="32.68" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1829" width="0.5" height="15.0" fill="rgb(233,15,17)" rx="2" ry="2" />
+<text  x="65.02" y="1839.5" ></text>
+</g>
+<g >
+<title>[Discord] (15 samples, 0.60%)</title><rect x="71.4" y="1669" width="7.0" height="15.0" fill="rgb(240,199,2)" rx="2" ry="2" />
+<text  x="74.39" y="1679.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="693" width="0.9" height="15.0" fill="rgb(230,66,33)" rx="2" ry="2" />
+<text  x="65.49" y="703.5" ></text>
+</g>
+<g >
+<title>[chrome] (22 samples, 0.87%)</title><rect x="204.9" y="1317" width="10.4" height="15.0" fill="rgb(233,7,22)" rx="2" ry="2" />
+<text  x="207.95" y="1327.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="2005" width="0.5" height="15.0" fill="rgb(244,219,18)" rx="2" ry="2" />
+<text  x="65.02" y="2015.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1397" width="0.9" height="15.0" fill="rgb(208,121,54)" rx="2" ry="2" />
+<text  x="65.49" y="1407.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="26.4" y="1829" width="3.3" height="15.0" fill="rgb(249,169,24)" rx="2" ry="2" />
+<text  x="29.40" y="1839.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="60.6" y="1621" width="0.9" height="15.0" fill="rgb(234,151,28)" rx="2" ry="2" />
+<text  x="63.61" y="1631.5" ></text>
+</g>
+<g >
+<title>[chrome] (4 samples, 0.16%)</title><rect x="31.6" y="1813" width="1.8" height="15.0" fill="rgb(252,48,44)" rx="2" ry="2" />
+<text  x="34.56" y="1823.5" ></text>
+</g>
+<g >
+<title>sort1 (40 samples, 1.59%)</title><rect x="1167.5" y="1333" width="18.8" height="15.0" fill="rgb(231,205,21)" rx="2" ry="2" />
+<text  x="1170.51" y="1343.5" ></text>
+</g>
+<g >
+<title>[Discord] (8 samples, 0.32%)</title><rect x="25.9" y="1957" width="3.8" height="15.0" fill="rgb(230,205,51)" rx="2" ry="2" />
+<text  x="28.93" y="1967.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1301" width="0.9" height="15.0" fill="rgb(222,227,1)" rx="2" ry="2" />
+<text  x="65.49" y="1311.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1445" width="0.9" height="15.0" fill="rgb(207,3,1)" rx="2" ry="2" />
+<text  x="65.49" y="1455.5" ></text>
+</g>
+<g >
+<title>v8::internal::parsing::ParseFunction (1 samples, 0.04%)</title><rect x="79.8" y="1541" width="0.5" height="15.0" fill="rgb(213,69,18)" rx="2" ry="2" />
+<text  x="82.83" y="1551.5" ></text>
+</g>
+<g >
+<title>_fini (1 samples, 0.04%)</title><rect x="10.9" y="1861" width="0.5" height="15.0" fill="rgb(253,106,24)" rx="2" ry="2" />
+<text  x="13.94" y="1871.5" ></text>
+</g>
+<g >
+<title>[chrome] (16 samples, 0.64%)</title><rect x="46.1" y="1797" width="7.5" height="15.0" fill="rgb(219,130,6)" rx="2" ry="2" />
+<text  x="49.08" y="1807.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="62.0" y="1989" width="0.5" height="15.0" fill="rgb(238,83,15)" rx="2" ry="2" />
+<text  x="65.02" y="1999.5" ></text>
+</g>
+<g >
+<title>gnome-terminal- (4 samples, 0.16%)</title><rect x="262.1" y="2069" width="1.9" height="15.0" fill="rgb(234,137,49)" rx="2" ry="2" />
+<text  x="265.12" y="2079.5" ></text>
+</g>
+<g >
+<title>[Discord] (7 samples, 0.28%)</title><rect x="35.8" y="1829" width="3.3" height="15.0" fill="rgb(215,23,48)" rx="2" ry="2" />
+<text  x="38.77" y="1839.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="232.6" y="1653" width="0.5" height="15.0" fill="rgb(253,176,51)" rx="2" ry="2" />
+<text  x="235.60" y="1663.5" ></text>
+</g>
+<g >
+<title>[unknown] (2 samples, 0.08%)</title><rect x="262.1" y="2037" width="1.0" height="15.0" fill="rgb(211,63,27)" rx="2" ry="2" />
+<text  x="265.12" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (22 samples, 0.87%)</title><rect x="70.0" y="1781" width="10.3" height="15.0" fill="rgb(254,152,46)" rx="2" ry="2" />
+<text  x="72.98" y="1791.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="581" width="1.9" height="15.0" fill="rgb(248,104,19)" rx="2" ry="2" />
+<text  x="79.54" y="591.5" ></text>
+</g>
+<g >
+<title>[Discord] (29 samples, 1.15%)</title><rect x="69.0" y="1893" width="13.6" height="15.0" fill="rgb(224,144,12)" rx="2" ry="2" />
+<text  x="72.05" y="1903.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="709" width="1.9" height="15.0" fill="rgb(250,178,39)" rx="2" ry="2" />
+<text  x="79.54" y="719.5" ></text>
+</g>
+<g >
+<title>sort1 (1,571 samples, 62.39%)</title><rect x="450.0" y="1893" width="736.3" height="15.0" fill="rgb(221,112,9)" rx="2" ry="2" />
+<text  x="453.04" y="1903.5" >sort1</text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="68.6" y="2021" width="0.4" height="15.0" fill="rgb(222,117,33)" rx="2" ry="2" />
+<text  x="71.58" y="2031.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="83.6" y="1909" width="0.9" height="15.0" fill="rgb(253,41,20)" rx="2" ry="2" />
+<text  x="86.57" y="1919.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="120.6" y="2005" width="1.9" height="15.0" fill="rgb(221,217,13)" rx="2" ry="2" />
+<text  x="123.60" y="2015.5" ></text>
+</g>
+<g >
+<title>_fini (1 samples, 0.04%)</title><rect x="29.2" y="1701" width="0.5" height="15.0" fill="rgb(216,47,49)" rx="2" ry="2" />
+<text  x="32.21" y="1711.5" ></text>
+</g>
+<g >
+<title>[chrome] (17 samples, 0.68%)</title><rect x="15.2" y="1893" width="7.9" height="15.0" fill="rgb(239,41,14)" rx="2" ry="2" />
+<text  x="18.15" y="1903.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1093" width="0.5" height="15.0" fill="rgb(217,146,35)" rx="2" ry="2" />
+<text  x="208.89" y="1103.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="645" width="0.9" height="15.0" fill="rgb(248,73,0)" rx="2" ry="2" />
+<text  x="65.49" y="655.5" ></text>
+</g>
+<g >
+<title>ThreadPoolForeg (72 samples, 2.86%)</title><rect x="86.4" y="2069" width="33.7" height="15.0" fill="rgb(222,27,15)" rx="2" ry="2" />
+<text  x="89.39" y="2079.5" >Th..</text>
+</g>
+<g >
+<title>sort1 (738 samples, 29.31%)</title><rect x="840.4" y="1605" width="345.9" height="15.0" fill="rgb(251,3,54)" rx="2" ry="2" />
+<text  x="843.41" y="1615.5" >sort1</text>
+</g>
+<g >
+<title>pa_once_begin (1 samples, 0.04%)</title><rect x="1189.1" y="2037" width="0.4" height="15.0" fill="rgb(219,146,47)" rx="2" ry="2" />
+<text  x="1192.06" y="2047.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="76.5" y="533" width="1.5" height="15.0" fill="rgb(250,54,54)" rx="2" ry="2" />
+<text  x="79.54" y="543.5" ></text>
+</g>
+<g >
+<title>[libclutter-1.0.so.0.2400.2] (1 samples, 0.04%)</title><rect x="247.6" y="2021" width="0.5" height="15.0" fill="rgb(248,65,40)" rx="2" ry="2" />
+<text  x="250.59" y="2031.5" ></text>
+</g>
+<g >
+<title>sort1 (687 samples, 27.28%)</title><rect x="864.3" y="1589" width="322.0" height="15.0" fill="rgb(251,133,21)" rx="2" ry="2" />
+<text  x="867.31" y="1599.5" >sort1</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1285" width="0.9" height="15.0" fill="rgb(241,130,49)" rx="2" ry="2" />
+<text  x="65.49" y="1295.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="997" width="0.9" height="15.0" fill="rgb(215,70,39)" rx="2" ry="2" />
+<text  x="65.49" y="1007.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="205.9" y="1157" width="0.5" height="15.0" fill="rgb(206,170,53)" rx="2" ry="2" />
+<text  x="208.89" y="1167.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="26.4" y="1621" width="1.9" height="15.0" fill="rgb(212,184,22)" rx="2" ry="2" />
+<text  x="29.40" y="1631.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1973" width="0.5" height="15.0" fill="rgb(214,222,30)" rx="2" ry="2" />
+<text  x="88.92" y="1983.5" ></text>
+</g>
+<g >
+<title>[Discord] (6 samples, 0.24%)</title><rect x="10.5" y="1989" width="2.8" height="15.0" fill="rgb(241,213,42)" rx="2" ry="2" />
+<text  x="13.47" y="1999.5" ></text>
+</g>
+<g >
+<title>[chrome] (42 samples, 1.67%)</title><rect x="197.5" y="1509" width="19.6" height="15.0" fill="rgb(225,6,28)" rx="2" ry="2" />
+<text  x="200.45" y="1519.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="119.7" y="1765" width="0.4" height="15.0" fill="rgb(216,14,42)" rx="2" ry="2" />
+<text  x="122.66" y="1775.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="85.9" y="1861" width="0.5" height="15.0" fill="rgb(231,125,11)" rx="2" ry="2" />
+<text  x="88.92" y="1871.5" ></text>
+</g>
+<g >
+<title>[chrome] (1 samples, 0.04%)</title><rect x="52.6" y="1733" width="0.5" height="15.0" fill="rgb(223,177,14)" rx="2" ry="2" />
+<text  x="55.64" y="1743.5" ></text>
+</g>
+<g >
+<title>sort1 (2 samples, 0.08%)</title><rect x="1185.3" y="1205" width="1.0" height="15.0" fill="rgb(240,229,34)" rx="2" ry="2" />
+<text  x="1188.31" y="1215.5" ></text>
+</g>
+<g >
+<title>[Discord] (18 samples, 0.71%)</title><rect x="70.9" y="1717" width="8.5" height="15.0" fill="rgb(247,164,20)" rx="2" ry="2" />
+<text  x="73.92" y="1727.5" ></text>
+</g>
+<g >
+<title>[Discord] (4 samples, 0.16%)</title><rect x="76.5" y="949" width="1.9" height="15.0" fill="rgb(221,209,48)" rx="2" ry="2" />
+<text  x="79.54" y="959.5" ></text>
+</g>
+<g >
+<title>[chrome] (6 samples, 0.24%)</title><rect x="30.6" y="1893" width="2.8" height="15.0" fill="rgb(207,105,23)" rx="2" ry="2" />
+<text  x="33.62" y="1903.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="76.5" y="389" width="1.5" height="15.0" fill="rgb(223,168,41)" rx="2" ry="2" />
+<text  x="79.54" y="399.5" ></text>
+</g>
+<g >
+<title>[chrome] (29 samples, 1.15%)</title><rect x="123.9" y="1877" width="13.6" height="15.0" fill="rgb(245,184,31)" rx="2" ry="2" />
+<text  x="126.88" y="1887.5" ></text>
+</g>
+<g >
+<title>[Discord] (3 samples, 0.12%)</title><rect x="26.9" y="1589" width="1.4" height="15.0" fill="rgb(223,190,10)" rx="2" ry="2" />
+<text  x="29.87" y="1599.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="53.1" y="1781" width="0.5" height="15.0" fill="rgb(231,144,21)" rx="2" ry="2" />
+<text  x="56.11" y="1791.5" ></text>
+</g>
+<g >
+<title>v8::internal::Execution::Call (2 samples, 0.08%)</title><rect x="79.4" y="1733" width="0.9" height="15.0" fill="rgb(243,0,53)" rx="2" ry="2" />
+<text  x="82.36" y="1743.5" ></text>
+</g>
+<g >
+<title>start_thread (42 samples, 1.67%)</title><rect x="35.3" y="2053" width="19.7" height="15.0" fill="rgb(209,165,49)" rx="2" ry="2" />
+<text  x="38.31" y="2063.5" ></text>
+</g>
+<g >
+<title>[chrome] (2 samples, 0.08%)</title><rect x="31.6" y="1749" width="0.9" height="15.0" fill="rgb(222,208,47)" rx="2" ry="2" />
+<text  x="34.56" y="1759.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1621" width="0.9" height="15.0" fill="rgb(232,84,39)" rx="2" ry="2" />
+<text  x="65.49" y="1631.5" ></text>
+</g>
+<g >
+<title>g_type_is_a (1 samples, 0.04%)</title><rect x="257.0" y="2037" width="0.4" height="15.0" fill="rgb(217,229,48)" rx="2" ry="2" />
+<text  x="259.97" y="2047.5" ></text>
+</g>
+<g >
+<title>[chrome] (34 samples, 1.35%)</title><rect x="39.1" y="1989" width="15.9" height="15.0" fill="rgb(232,58,13)" rx="2" ry="2" />
+<text  x="42.05" y="1999.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="613" width="0.9" height="15.0" fill="rgb(223,96,24)" rx="2" ry="2" />
+<text  x="65.49" y="623.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="501" width="0.9" height="15.0" fill="rgb(224,161,29)" rx="2" ry="2" />
+<text  x="65.49" y="511.5" ></text>
+</g>
+<g >
+<title>operator new[] (1 samples, 0.04%)</title><rect x="52.2" y="1717" width="0.4" height="15.0" fill="rgb(226,29,53)" rx="2" ry="2" />
+<text  x="55.18" y="1727.5" ></text>
+</g>
+<g >
+<title>[chrome] (72 samples, 2.86%)</title><rect x="86.4" y="1973" width="33.7" height="15.0" fill="rgb(242,72,16)" rx="2" ry="2" />
+<text  x="89.39" y="1983.5" >[c..</text>
+</g>
+<g >
+<title>[chrome] (32 samples, 1.27%)</title><rect x="122.5" y="1925" width="15.0" height="15.0" fill="rgb(216,215,50)" rx="2" ry="2" />
+<text  x="125.47" y="1935.5" ></text>
+</g>
+<g >
+<title>[chrome] (76 samples, 3.02%)</title><rect x="182.5" y="1685" width="35.6" height="15.0" fill="rgb(218,128,28)" rx="2" ry="2" />
+<text  x="185.45" y="1695.5" >[ch..</text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="62.5" y="1861" width="0.9" height="15.0" fill="rgb(231,218,21)" rx="2" ry="2" />
+<text  x="65.49" y="1871.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.04%)</title><rect x="1189.1" y="2053" width="0.4" height="15.0" fill="rgb(231,71,7)" rx="2" ry="2" />
+<text  x="1192.06" y="2063.5" ></text>
+</g>
+<g >
+<title>[Discord] (2 samples, 0.08%)</title><rect x="77.0" y="341" width="1.0" height="15.0" fill="rgb(220,120,16)" rx="2" ry="2" />
+<text  x="80.01" y="351.5" ></text>
+</g>
+</g>
+</svg>

@@ -2,3 +2,6 @@
 
 all: 
 	gcc main.c sort.c -o sort -Wall
+
+clean:
+	rm sort
