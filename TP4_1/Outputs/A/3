@@ -1,0 +1,9 @@
+
+ Performance counter stats for './sort 3 1 100000000':
+
+   180,403,442,738      cycles                   
+   134,205,896,963      instructions              #    0.74  insns per cycle        
+     1,047,718,308      cache-misses                                                
+
+      61.601058251 seconds time elapsed
+

@@ -1,0 +1,9 @@
+
+ Performance counter stats for './sort 4 1 100000000':
+
+   136,277,153,548      cycles                   
+   171,825,351,948      instructions              #    1.26  insns per cycle        
+        45,589,911      cache-misses                                                
+
+      46.522216283 seconds time elapsed
+
