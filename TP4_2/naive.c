@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define MSIZE 500
+#define MSIZE 2000
  
 float matrix_a[MSIZE][MSIZE] ;
 float matrix_b[MSIZE][MSIZE] ;

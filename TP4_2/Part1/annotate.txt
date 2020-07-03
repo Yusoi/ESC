@@ -1,0 +1,187 @@
+ Percent |	Source code & Disassembly of naive for cpu-clock
+----------------------------------------------------------------
+         :
+         :
+         :
+         :	Disassembly of section .text:
+         :
+         :	00000000004005f0 <main>:
+         :	    }
+         :	  }
+         :	}
+         :	 
+         :	int main(int argc, char* argv[])
+         :	{
+    0.00 :	  4005f0:       push   %r14
+    0.00 :	  4005f2:       xor    %r14d,%r14d
+    0.00 :	  4005f5:       push   %r13
+    0.00 :	  4005f7:       push   %r12
+    0.00 :	  4005f9:       push   %rbp
+    0.00 :	  4005fa:       push   %rbx
+         :	      matrix_r[i][j] = sum ;
+         :	    }
+         :	  }
+         :	}
+         :	 
+         :	int main(int argc, char* argv[])
+    0.00 :	  4005fb:       movslq %r14d,%rbp
+    0.00 :	  4005fe:       xor    %ebx,%ebx
+    0.00 :	  400600:       imul   $0x1f40,%rbp,%rbp
+    0.00 :	  400607:       lea    0x2485a20(%rbp),%r13
+    0.00 :	  40060e:       lea    0x1543620(%rbp),%r12
+    0.00 :	  400615:       add    $0x601220,%rbp
+    0.00 :	  40061c:       nopl   0x0(%rax)
+         :	{
+         :	  int i, j ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+         :	    for (j = 0 ; j < MSIZE ; j++) {
+         :	      matrix_a[i][j] = (float) rand() / RAND_MAX ;
+    0.02 :	  400620:       callq  4003c8 <rand@plt>
+    0.02 :	  400625:       cvtsi2ss %eax,%xmm0
+         :	void initialize_matrices()
+         :	{
+         :	  int i, j ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+         :	    for (j = 0 ; j < MSIZE ; j++) {
+    0.09 :	  400629:       add    $0x1,%ebx
+         :	      matrix_a[i][j] = (float) rand() / RAND_MAX ;
+    0.00 :	  40062c:       mulss  0x1c4(%rip),%xmm0        # 4007f8 <__dso_handle+0x8>
+    0.06 :	  400634:       movss  %xmm0,0x0(%r13)
+         :	void initialize_matrices()
+         :	{
+         :	  int i, j ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+         :	    for (j = 0 ; j < MSIZE ; j++) {
+    0.03 :	  40063a:       add    $0x4,%r13
+         :	      matrix_a[i][j] = (float) rand() / RAND_MAX ;
+         :	      matrix_b[i][j] = (float) rand() / RAND_MAX ;
+    0.00 :	  40063e:       callq  4003c8 <rand@plt>
+    0.04 :	  400643:       cvtsi2ss %eax,%xmm0
+         :	      matrix_r[i][j] = 0.0 ;
+    0.07 :	  400647:       movl   $0x0,0x0(%rbp)
+         :	void initialize_matrices()
+         :	{
+         :	  int i, j ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+         :	    for (j = 0 ; j < MSIZE ; j++) {
+    0.00 :	  40064e:       add    $0x4,%rbp
+         :	      matrix_a[i][j] = (float) rand() / RAND_MAX ;
+         :	      matrix_b[i][j] = (float) rand() / RAND_MAX ;
+    0.00 :	  400652:       mulss  0x19e(%rip),%xmm0        # 4007f8 <__dso_handle+0x8>
+    0.10 :	  40065a:       movss  %xmm0,(%r12)
+         :	void initialize_matrices()
+         :	{
+         :	  int i, j ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+         :	    for (j = 0 ; j < MSIZE ; j++) {
+    0.02 :	  400660:       add    $0x4,%r12
+    0.00 :	  400664:       cmp    $0x7d0,%ebx
+    0.00 :	  40066a:       jne    400620 <main+0x30>
+         :
+         :	void initialize_matrices()
+         :	{
+         :	  int i, j ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+    0.00 :	  40066c:       add    $0x1,%r14d
+    0.00 :	  400670:       cmp    $0x7d0,%r14d
+    0.00 :	  400677:       jne    4005fb <main+0xb>
+         :	    for (j = 0 ; j < MSIZE ; j++) {
+         :	      float sum = 0.0 ;
+         :	      for (k = 0 ; k < MSIZE ; k++) {
+         :	        sum = sum + (matrix_a[i][k] * matrix_b[k][j]) ;
+         :	      }
+         :	      matrix_r[i][j] = sum ;
+    0.00 :	  400679:       xorps  %xmm2,%xmm2
+         :
+         :	void initialize_matrices()
+         :	{
+         :	  int i, j ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+    0.00 :	  40067c:       mov    $0x601220,%edi
+    0.00 :	  400681:       mov    $0x2485a20,%esi
+         :	 
+         :	void multiply_matrices()
+         :	{
+         :	  int i, j, k ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+    0.00 :	  400686:       xor    %ebx,%ebx
+    0.00 :	  400688:       nopl   0x0(%rax,%rax,1)
+         :	    for (j = 0 ; j < MSIZE ; j++) {
+         :	      float sum = 0.0 ;
+         :	      for (k = 0 ; k < MSIZE ; k++) {
+         :	        sum = sum + (matrix_a[i][k] * matrix_b[k][j]) ;
+         :	      }
+         :	      matrix_r[i][j] = sum ;
+    0.00 :	  400690:       xorps  %xmm1,%xmm1
+    0.00 :	  400693:       lea    0x1543620(%rbx),%rcx
+    0.00 :	  40069a:       mov    %rsi,%rdx
+    0.00 :	  40069d:       xor    %eax,%eax
+    0.00 :	  40069f:       nop
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+         :	    for (j = 0 ; j < MSIZE ; j++) {
+         :	      float sum = 0.0 ;
+         :	      for (k = 0 ; k < MSIZE ; k++) {
+         :	        sum = sum + (matrix_a[i][k] * matrix_b[k][j]) ;
+   11.13 :	  4006a0:       movaps %xmm2,%xmm0
+    0.01 :	  4006a3:       movlps (%rdx),%xmm0
+    0.49 :	  4006a6:       movhps 0x8(%rdx),%xmm0
+    1.57 :	  4006aa:       add    $0x4,%rdx
+   10.36 :	  4006ae:       shufps $0x0,%xmm0,%xmm0
+    0.29 :	  4006b2:       mulps  (%rcx,%rax,1),%xmm0
+   56.69 :	  4006b6:       add    $0x1f40,%rax
+         :	  int i, j, k ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+         :	    for (j = 0 ; j < MSIZE ; j++) {
+         :	      float sum = 0.0 ;
+         :	      for (k = 0 ; k < MSIZE ; k++) {
+    7.00 :	  4006bc:       cmp    $0xf42400,%rax
+         :	        sum = sum + (matrix_a[i][k] * matrix_b[k][j]) ;
+    0.01 :	  4006c2:       addps  %xmm0,%xmm1
+         :	  int i, j, k ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+         :	    for (j = 0 ; j < MSIZE ; j++) {
+         :	      float sum = 0.0 ;
+         :	      for (k = 0 ; k < MSIZE ; k++) {
+   11.95 :	  4006c5:       jne    4006a0 <main+0xb0>
+         :	        sum = sum + (matrix_a[i][k] * matrix_b[k][j]) ;
+         :	      }
+         :	      matrix_r[i][j] = sum ;
+    0.00 :	  4006c7:       addps  %xmm2,%xmm1
+    0.02 :	  4006ca:       movaps %xmm1,(%rdi,%rbx,1)
+    0.01 :	  4006ce:       add    $0x10,%rbx
+    0.00 :	  4006d2:       cmp    $0x1f40,%rbx
+    0.00 :	  4006d9:       jne    400690 <main+0xa0>
+    0.00 :	  4006db:       add    $0x1f40,%rsi
+    0.00 :	  4006e2:       add    $0x1f40,%rdi
+         :	 
+         :	void multiply_matrices()
+         :	{
+         :	  int i, j, k ;
+         :	 
+         :	  for (i = 0 ; i < MSIZE ; i++) {
+    0.00 :	  4006e9:       cmp    $0x33c7e20,%rsi
+    0.00 :	  4006f0:       jne    400686 <main+0x96>
+         :	int main(int argc, char* argv[])
+         :	{
+         :	  initialize_matrices() ;
+         :	  multiply_matrices() ;
+         :	  return( EXIT_SUCCESS ) ;
+         :	}
+    0.00 :	  4006f2:       pop    %rbx
+    0.00 :	  4006f3:       pop    %rbp
+    0.00 :	  4006f4:       pop    %r12
+    0.00 :	  4006f6:       pop    %r13
+    0.00 :	  4006f8:       xor    %eax,%eax
+    0.00 :	  4006fa:       pop    %r14
+    0.00 :	  4006fc:       retq   

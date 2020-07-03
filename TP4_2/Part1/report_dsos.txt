@@ -1,0 +1,24 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+# Samples: 28K of event 'cpu-clock'
+# Event count (approx.): 28939
+#
+# Overhead  Command  Shared Object          Symbol
+# ........  .......  .............  ..............
+#
+    98.62%    naive  naive          [.] main      
+     0.36%    naive  libc-2.12.so   [.] __random  
+     0.35%    naive  libc-2.12.so   [.] __random_r
+     0.07%    naive  libc-2.12.so   [.] rand      
+     0.05%    naive  naive          [.] rand@plt  
+
+
+# Samples: 44  of event 'faults'
+# Event count (approx.): 1086
+#
+# Overhead  Command  Shared Object    Symbol
+# ........  .......  .............  ........
+#
+    84.07%    naive  naive          [.] main
+
+

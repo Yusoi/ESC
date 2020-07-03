@@ -1,0 +1,30 @@
+# ========
+# captured on: Fri Jul  3 13:23:00 2020
+# hostname : compute-431-8
+# os release : 2.6.32-279.14.1.el6.x86_64
+# perf version : 3.16.3-1.el6.elrepo.x86_64
+# arch : x86_64
+# nrcpus online : 24
+# nrcpus avail : 24
+# cpudesc : Intel(R) Xeon(R) CPU E5649 @ 2.53GHz
+# cpuid : GenuineIntel,6,44,2
+# total memory : 49551752 kB
+# cmdline : /usr/bin/perf record -e cpu-cycles -c 100000 ./naive 
+# event : name = cpu-cycles, type = 0, config = 0x0, config1 = 0x0, config2 = 0x0, excl_usr = 0, excl_kern = 0, excl_host = 0, excl_guest = 1, precise_ip = 0, attr_mmap2 = 0, attr_mmap  = 1, attr_mmap_data = 0
+# HEADER_CPU_TOPOLOGY info available, use -I to display
+# HEADER_NUMA_TOPOLOGY info available, use -I to display
+# pmu mappings: cpu = 4, tracepoint = 2, software = 1
+# ========
+#
+# Samples: 211K of event 'cpu-cycles'
+# Event count (approx.): 21102000000
+#
+# Overhead       Samples  Command      Shared Object                            Symbol
+# ........  ............  .......  .................  ................................
+#
+    98.76%        208393    naive  naive              [.] main                        
+     0.36%           767    naive  libc-2.12.so       [.] __random                    
+     0.31%           646    naive  libc-2.12.so       [.] __random_r                  
+     0.10%           212    naive  [kernel.kallsyms]  [k] clear_page_c                
+
+

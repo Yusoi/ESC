@@ -1,0 +1,14 @@
+
+ Performance counter stats for './naive2':
+
+    14,502,947,179      instructions              #    1.65  insns per cycle         [62.50%]
+     8,777,473,363      cycles                    [62.52%]
+     4,145,861,213      L1-dcache-loads                                              [62.49%]
+       503,302,464      L1-dcache-load-misses     #   12.14% of all L1-dcache hits   [62.51%]
+            68,514      dTLB-load-misses                                             [62.50%]
+        78,895,754      cache-references                                             [50.00%]
+         4,036,699      branch-misses             #    0.19% of all branches         [50.03%]
+     2,129,233,291      branch-instructions                                          [50.01%]
+
+       3.336764310 seconds time elapsed
+
