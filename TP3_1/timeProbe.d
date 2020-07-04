@@ -16,7 +16,7 @@ this int calc_time;
 
 dtrace:::BEGIN
 {
-    printf("Tracer is ready!");
+    printf("Tracer is ready!\n");
 }
 
 heattimer*:::query-matrix_generation
@@ -46,13 +46,13 @@ heattimer*:::query-end_iteration
     this->it_time = walltimestamp - self->iteration_start;
     this->copy_time = walltimestamp - self->copy_start;
     this->calc_time = this->it_time - this->copy_time;
-    printf("Iteration %d finished on PROCESS: %d, THREAD: %d\n\tTime spent on calculations: %d\n\tTime spent on copies: %d\n\tTime spent on the whole iteration: %d\n",
+    /*printf("Iteration %d finished on PROCESS: %d, THREAD: %d\n\tTime spent on calculations: %d\n\tTime spent on copies: %d\n\tTime spent on the whole iteration: %d\n",
            arg0,
 	       pid,
            tid,
            this->calc_time,
            this->copy_time,
-           this->it_time);
+           this->it_time);*/
 
     @avg_calc_time = avg(this->calc_time);
     @max_calc_time = max(this->calc_time);
@@ -64,6 +64,7 @@ heattimer*:::query-end_iteration
 
 heattimer*:::query-end_calc
 {
+    printf("Program stopped running at this time\n");
     alg_time = walltimestamp - alg_time;
 }
 
@@ -90,13 +91,13 @@ syscall::pwrite*:return
 sched:::on-cpu
 /execname == "seq" || execname == "openmp" || execname == "mpi"/
 {
-    printf("Thread %d started running\n",tid);
+    /*printf("Thread %d started running\n",tid);*/
 }
 
 sched:::off-cpu
 /execname == "seq" || execname == "openmp" || execname == "mpi"/
 {
-    printf("Thread %d stopped running\n",tid);
+    /*printf("Thread %d stopped running\n",tid);*/
 }
 
 sched:::sleep

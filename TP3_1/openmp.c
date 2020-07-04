@@ -60,7 +60,7 @@ int main()
 
         #pragma omp parallel
         {
-	    #pragma omp master
+	        #pragma omp master
             {
                 if(HEATTIMER_QUERY_START_ITERATION_ENABLED())
                     HEATTIMER_QUERY_START_ITERATION();

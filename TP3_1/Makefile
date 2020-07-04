@@ -16,7 +16,7 @@ seq: seq_final.o
 
 # compile the main program
 openmp.o: openmp.c heattimer.h
-	gcc -O3 -c openmp.c
+	gcc -O3 -c openmp.c -lm -fopenmp
 # have dtrace post-process the object files
 openmp_final.o: heattimer.d openmp.o
 	dtrace -G -s heattimer.d openmp.o -o openmp_final.o
