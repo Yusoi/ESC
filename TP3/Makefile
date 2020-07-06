@@ -62,6 +62,7 @@ clean:
 	-rm -f openmp
 	-rm -f mpi
 	-rm -f modern_c
+	-rm -f pthreads
 	-rm -f heattimer.h
 
 

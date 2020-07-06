@@ -11,6 +11,7 @@
 #define N_THREADS 8
 #define M_DIV MAT_SIZE / N_THREADS
 
+/*
 class Barrier{
     private:
         int counter = 0;
@@ -38,6 +39,35 @@ class Barrier{
             }
         }
 };
+*/
+
+class Barrier {
+public:
+    explicit Barrier(std::size_t iCount) : 
+      mThreshold(iCount), 
+      mCount(iCount), 
+      mGeneration(0) {
+    }
+
+    void Wait() {
+        std::unique_lock<std::mutex> lLock{mMutex};
+        auto lGen = mGeneration;
+        if (!--mCount) {
+            mGeneration++;
+            mCount = mThreshold;
+            mCond.notify_all();
+        } else {
+            mCond.wait(lLock, [this, lGen] { return lGen != mGeneration; });
+        }
+    }
+
+private:
+    std::mutex mMutex;
+    std::condition_variable mCond;
+    std::size_t mThreshold;
+    std::size_t mCount;
+    std::size_t mGeneration;
+};
 
 
 void heat_dispersion(int tnum, int** G1, int** G2, Barrier *br){
@@ -51,8 +81,7 @@ void heat_dispersion(int tnum, int** G1, int** G2, Barrier *br){
             }
         }
 
-        printf("Entering Barrier %d ------------- \n",tnum);
-        br->barrier();
+        br->Wait();
 
         for (int i = (tnum * M_DIV) + 1; i < ((tnum + 1) * M_DIV) + 1; i++)
         {
@@ -62,8 +91,7 @@ void heat_dispersion(int tnum, int** G1, int** G2, Barrier *br){
             }
         }
 
-        printf("Entering Barrier %d ------------- \n",tnum);
-        br->barrier();
+        br->Wait();
     }
 }
 
@@ -105,7 +133,7 @@ int main()
 
     //------------------------------------------------------------------------------------------
     //Iterações sobre a difusão de calor
-    Barrier br;
+    Barrier br(N_THREADS);
 
     for(int i = 0; i < N_THREADS; i++){
         threads[i] = std::thread(heat_dispersion,i,G1,G2,&br);
