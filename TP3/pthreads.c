@@ -105,11 +105,11 @@ int main()
         pthread_join(thread_handles[thread],NULL);
     }
 
-    if(HEATTIMER_QUERY_END_CALC_ENABLED())
-        HEATTIMER_QUERY_END_CALC();
-
     free(thread_handles);
     pthread_barrier_destroy(&barrier);
+
+    if(HEATTIMER_QUERY_END_CALC_ENABLED())
+        HEATTIMER_QUERY_END_CALC();
 
     //Prints results to a file
     for (int i = 0; i < M_SIZE; i++)
