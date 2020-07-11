@@ -73,6 +73,10 @@ private:
 void heat_dispersion(int tnum, int** G1, int** G2, Barrier *br){
     for (int it = 0; it < N_MAX; it++)
     {
+        if(tnum == 0)
+            if(HEATTIMER_QUERY_START_ITERATION_ENABLED())
+                HEATTIMER_QUERY_START_ITERATION();
+
         for (int i = (tnum * M_DIV) + 1; i < ((tnum + 1) * M_DIV) + 1; i++)
         {
             for (int j = 1; j < M_SIZE - 1; j++)
@@ -83,6 +87,10 @@ void heat_dispersion(int tnum, int** G1, int** G2, Barrier *br){
 
         br->Wait();
 
+        if(tnum == 0)
+            if(HEATTIMER_QUERY_START_COPY_ENABLED())
+                    HEATTIMER_QUERY_START_COPY();
+
         for (int i = (tnum * M_DIV) + 1; i < ((tnum + 1) * M_DIV) + 1; i++)
         {
             for (int j = 1; j < M_SIZE - 1; j++)
@@ -92,6 +100,10 @@ void heat_dispersion(int tnum, int** G1, int** G2, Barrier *br){
         }
 
         br->Wait();
+
+        if(tnum == 0)
+            if(HEATTIMER_QUERY_END_ITERATION_ENABLED())
+                    HEATTIMER_QUERY_END_ITERATION(it);
     }
 }
 
@@ -102,6 +114,9 @@ int main()
     scanf("*");
 
     FILE *file = fopen("result.txt", "w+");
+
+    if(HEATTIMER_QUERY_MATRIX_GENERATION_ENABLED())
+        HEATTIMER_QUERY_MATRIX_GENERATION(MAT_SIZE);
 
     int **G1, **G2;
 
@@ -135,6 +150,9 @@ int main()
     //Iterações sobre a difusão de calor
     Barrier br(N_THREADS);
 
+    if(HEATTIMER_QUERY_START_CALC_ENABLED())
+        HEATTIMER_QUERY_START_CALC();
+
     for(int i = 0; i < N_THREADS; i++){
         threads[i] = std::thread(heat_dispersion,i,G1,G2,&br);
     }
@@ -142,6 +160,9 @@ int main()
     for(int i = 0; i < N_THREADS; i++){
         threads[i].join();
     }
+
+    if(HEATTIMER_QUERY_END_CALC_ENABLED())
+        HEATTIMER_QUERY_END_CALC();
 
     //Prints results to a file
     for (int i = 0; i < M_SIZE; i++)
