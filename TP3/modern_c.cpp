@@ -8,7 +8,7 @@
 #define N_MAX 1000
 #define MAT_SIZE 1024
 #define M_SIZE MAT_SIZE + 2
-#define N_THREADS 8
+#define N_THREADS 4
 #define M_DIV MAT_SIZE / N_THREADS
 
 /*

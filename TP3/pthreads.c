@@ -8,7 +8,7 @@
 #define N_MAX 1000
 #define MAT_SIZE 1024
 #define M_SIZE MAT_SIZE + 2
-#define N_THREADS 8
+#define N_THREADS 4
 #define M_DIV MAT_SIZE / N_THREADS
 
 int **G1, **G2;
@@ -91,7 +91,7 @@ int main()
     }
 
     pthread_t* thread_handles = (pthread_t*) malloc(N_THREADS * sizeof(pthread_t));
-    pthread_barrier_init(&barrier, (pthread_barrierattr_t*) NULL, 8);
+    pthread_barrier_init(&barrier, (pthread_barrierattr_t*) NULL, N_THREADS);
 
     if(HEATTIMER_QUERY_START_CALC_ENABLED())
         HEATTIMER_QUERY_START_CALC();
