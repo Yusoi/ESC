@@ -1,0 +1,1036 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="502" onload="init(evt)" viewBox="0 0 1200 502" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+	}
+
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom();
+			zoom(target);
+		}
+		else if (e.target.id == "unzoom") unzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+	}, false)
+
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+		return;
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+
+		for (var x = txt.length - 2; x > 0; x--) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom() {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+		search();
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) {
+				currentSearchTerm = term;
+				search();
+			}
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (currentSearchTerm === null) return;
+		var term = currentSearchTerm;
+
+		var re = new RegExp(term, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="502.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="485" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="485" > </text>
+<g id="frames">
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="421" width="1.5" height="15.0" fill="rgb(206,174,43)" rx="2" ry="2" />
+<text  x="16.01" y="431.5" ></text>
+</g>
+<g >
+<title>[[nfs]] (1 samples, 0.13%)</title><rect x="1187.0" y="165" width="1.5" height="15.0" fill="rgb(207,118,31)" rx="2" ry="2" />
+<text  x="1189.99" y="175.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (201 samples, 25.67%)</title><rect x="335.5" y="293" width="302.9" height="15.0" fill="rgb(249,174,2)" rx="2" ry="2" />
+<text  x="338.52" y="303.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (4 samples, 0.51%)</title><rect x="1179.5" y="101" width="6.0" height="15.0" fill="rgb(226,4,24)" rx="2" ry="2" />
+<text  x="1182.45" y="111.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="609.8" y="165" width="3.0" height="15.0" fill="rgb(231,203,14)" rx="2" ry="2" />
+<text  x="612.80" y="175.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (4 samples, 0.51%)</title><rect x="1179.5" y="85" width="6.0" height="15.0" fill="rgb(240,188,3)" rx="2" ry="2" />
+<text  x="1182.45" y="95.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="309" width="1.5" height="15.0" fill="rgb(229,175,17)" rx="2" ry="2" />
+<text  x="16.01" y="319.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (11 samples, 1.40%)</title><rect x="621.9" y="213" width="16.5" height="15.0" fill="rgb(222,173,26)" rx="2" ry="2" />
+<text  x="624.85" y="223.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1173.4" y="309" width="3.0" height="15.0" fill="rgb(216,170,38)" rx="2" ry="2" />
+<text  x="1176.42" y="319.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="11.5" y="357" width="1.5" height="15.0" fill="rgb(235,27,51)" rx="2" ry="2" />
+<text  x="14.51" y="367.5" ></text>
+</g>
+<g >
+<title>[libc-2.12.so] (5 samples, 0.64%)</title><rect x="1177.9" y="357" width="7.6" height="15.0" fill="rgb(230,97,42)" rx="2" ry="2" />
+<text  x="1180.94" y="367.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="11.5" y="373" width="1.5" height="15.0" fill="rgb(238,108,30)" rx="2" ry="2" />
+<text  x="14.51" y="383.5" ></text>
+</g>
+<g >
+<title>init (390 samples, 49.81%)</title><rect x="50.7" y="437" width="587.7" height="15.0" fill="rgb(228,71,53)" rx="2" ry="2" />
+<text  x="53.69" y="447.5" >init</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (12 samples, 1.53%)</title><rect x="643.0" y="405" width="18.0" height="15.0" fill="rgb(217,229,46)" rx="2" ry="2" />
+<text  x="645.95" y="415.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="133" width="1.5" height="15.0" fill="rgb(220,221,49)" rx="2" ry="2" />
+<text  x="16.01" y="143.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (5 samples, 0.64%)</title><rect x="1177.9" y="277" width="7.6" height="15.0" fill="rgb(210,130,28)" rx="2" ry="2" />
+<text  x="1180.94" y="287.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="661.0" y="373" width="1.5" height="15.0" fill="rgb(218,24,26)" rx="2" ry="2" />
+<text  x="664.03" y="383.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (147 samples, 18.77%)</title><rect x="391.3" y="261" width="221.5" height="15.0" fill="rgb(212,149,35)" rx="2" ry="2" />
+<text  x="394.28" y="271.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[unknown] (23 samples, 2.94%)</title><rect x="16.0" y="405" width="34.7" height="15.0" fill="rgb(205,55,38)" rx="2" ry="2" />
+<text  x="19.03" y="415.5" >[u..</text>
+</g>
+<g >
+<title>[ipmi_si.ko] (11 samples, 1.40%)</title><rect x="644.5" y="357" width="16.5" height="15.0" fill="rgb(235,164,28)" rx="2" ry="2" />
+<text  x="647.46" y="367.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="341" width="1.5" height="15.0" fill="rgb(235,37,47)" rx="2" ry="2" />
+<text  x="16.01" y="351.5" ></text>
+</g>
+<g >
+<title>[ipmi_si.ko] (11 samples, 1.40%)</title><rect x="644.5" y="373" width="16.5" height="15.0" fill="rgb(221,57,41)" rx="2" ry="2" />
+<text  x="647.46" y="383.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (14 samples, 1.79%)</title><rect x="29.6" y="277" width="21.1" height="15.0" fill="rgb(246,220,26)" rx="2" ry="2" />
+<text  x="32.59" y="287.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (251 samples, 32.06%)</title><rect x="260.2" y="341" width="378.2" height="15.0" fill="rgb(226,60,48)" rx="2" ry="2" />
+<text  x="263.17" y="351.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (16 samples, 2.04%)</title><rect x="614.3" y="245" width="24.1" height="15.0" fill="rgb(249,224,12)" rx="2" ry="2" />
+<text  x="617.32" y="255.5" >[..</text>
+</g>
+<g >
+<title>[ipmi_si.ko] (12 samples, 1.53%)</title><rect x="643.0" y="389" width="18.0" height="15.0" fill="rgb(212,216,6)" rx="2" ry="2" />
+<text  x="645.95" y="399.5" ></text>
+</g>
+<g >
+<title>snmpd (1 samples, 0.13%)</title><rect x="1188.5" y="437" width="1.5" height="15.0" fill="rgb(228,181,5)" rx="2" ry="2" />
+<text  x="1191.49" y="447.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (125 samples, 15.96%)</title><rect x="424.4" y="245" width="188.4" height="15.0" fill="rgb(217,24,2)" rx="2" ry="2" />
+<text  x="427.43" y="255.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="641.4" y="261" width="1.6" height="15.0" fill="rgb(252,226,1)" rx="2" ry="2" />
+<text  x="644.44" y="271.5" ></text>
+</g>
+<g >
+<title>[[sunrpc]] (1 samples, 0.13%)</title><rect x="1187.0" y="133" width="1.5" height="15.0" fill="rgb(213,169,36)" rx="2" ry="2" />
+<text  x="1189.99" y="143.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="10.0" y="357" width="1.5" height="15.0" fill="rgb(220,12,22)" rx="2" ry="2" />
+<text  x="13.00" y="367.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (18 samples, 2.30%)</title><rect x="23.6" y="325" width="27.1" height="15.0" fill="rgb(249,155,46)" rx="2" ry="2" />
+<text  x="26.56" y="335.5" >[..</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (5 samples, 0.64%)</title><rect x="1177.9" y="245" width="7.6" height="15.0" fill="rgb(224,133,35)" rx="2" ry="2" />
+<text  x="1180.94" y="255.5" ></text>
+</g>
+<g >
+<title>[perf] (7 samples, 0.89%)</title><rect x="1177.9" y="405" width="10.6" height="15.0" fill="rgb(223,153,50)" rx="2" ry="2" />
+<text  x="1180.94" y="415.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="10.0" y="389" width="1.5" height="15.0" fill="rgb(221,24,21)" rx="2" ry="2" />
+<text  x="13.00" y="399.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (4 samples, 0.51%)</title><rect x="1179.5" y="181" width="6.0" height="15.0" fill="rgb(241,160,24)" rx="2" ry="2" />
+<text  x="1182.45" y="191.5" ></text>
+</g>
+<g >
+<title>[perf] (2 samples, 0.26%)</title><rect x="1185.5" y="357" width="3.0" height="15.0" fill="rgb(237,88,8)" rx="2" ry="2" />
+<text  x="1188.48" y="367.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="357" width="1.5" height="15.0" fill="rgb(245,157,52)" rx="2" ry="2" />
+<text  x="16.01" y="367.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1173.4" y="357" width="3.0" height="15.0" fill="rgb(230,188,24)" rx="2" ry="2" />
+<text  x="1176.42" y="367.5" ></text>
+</g>
+<g >
+<title>[[nfs]] (1 samples, 0.13%)</title><rect x="1187.0" y="181" width="1.5" height="15.0" fill="rgb(224,146,43)" rx="2" ry="2" />
+<text  x="1189.99" y="191.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (16 samples, 2.04%)</title><rect x="26.6" y="309" width="24.1" height="15.0" fill="rgb(218,72,10)" rx="2" ry="2" />
+<text  x="29.58" y="319.5" >[..</text>
+</g>
+<g >
+<title>flush-8:0 (1 samples, 0.13%)</title><rect x="13.0" y="437" width="1.5" height="15.0" fill="rgb(216,178,10)" rx="2" ry="2" />
+<text  x="16.01" y="447.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="661.0" y="357" width="1.5" height="15.0" fill="rgb(247,158,17)" rx="2" ry="2" />
+<text  x="664.03" y="367.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (16 samples, 2.04%)</title><rect x="614.3" y="229" width="24.1" height="15.0" fill="rgb(226,57,28)" rx="2" ry="2" />
+<text  x="617.32" y="239.5" >[..</text>
+</g>
+<g >
+<title>[naive2] (338 samples, 43.17%)</title><rect x="667.1" y="421" width="509.3" height="15.0" fill="rgb(213,227,42)" rx="2" ry="2" />
+<text  x="670.06" y="431.5" >[naive2]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (22 samples, 2.81%)</title><rect x="17.5" y="389" width="33.2" height="15.0" fill="rgb(241,61,37)" rx="2" ry="2" />
+<text  x="20.54" y="399.5" >[[..</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (5 samples, 0.64%)</title><rect x="1177.9" y="325" width="7.6" height="15.0" fill="rgb(245,209,1)" rx="2" ry="2" />
+<text  x="1180.94" y="335.5" ></text>
+</g>
+<g >
+<title>[[sunrpc]] (1 samples, 0.13%)</title><rect x="1187.0" y="53" width="1.5" height="15.0" fill="rgb(215,9,42)" rx="2" ry="2" />
+<text  x="1189.99" y="63.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.13%)</title><rect x="1188.5" y="405" width="1.5" height="15.0" fill="rgb(238,5,16)" rx="2" ry="2" />
+<text  x="1191.49" y="415.5" ></text>
+</g>
+<g >
+<title>irqbalance (3 samples, 0.38%)</title><rect x="638.4" y="437" width="4.6" height="15.0" fill="rgb(232,215,29)" rx="2" ry="2" />
+<text  x="641.43" y="447.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (21 samples, 2.68%)</title><rect x="19.0" y="373" width="31.7" height="15.0" fill="rgb(239,160,13)" rx="2" ry="2" />
+<text  x="22.04" y="383.5" >[[..</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="197" width="1.5" height="15.0" fill="rgb(216,187,8)" rx="2" ry="2" />
+<text  x="16.01" y="207.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="609.8" y="149" width="3.0" height="15.0" fill="rgb(229,31,54)" rx="2" ry="2" />
+<text  x="612.80" y="159.5" ></text>
+</g>
+<g >
+<title>kipmi0 (12 samples, 1.53%)</title><rect x="643.0" y="437" width="18.0" height="15.0" fill="rgb(246,111,52)" rx="2" ry="2" />
+<text  x="645.95" y="447.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1173.4" y="373" width="3.0" height="15.0" fill="rgb(208,23,28)" rx="2" ry="2" />
+<text  x="1176.42" y="383.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="85" width="1.5" height="15.0" fill="rgb(237,61,29)" rx="2" ry="2" />
+<text  x="16.01" y="95.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.13%)</title><rect x="14.5" y="421" width="1.5" height="15.0" fill="rgb(246,17,1)" rx="2" ry="2" />
+<text  x="17.52" y="431.5" ></text>
+</g>
+<g >
+<title>[unknown] (3 samples, 0.38%)</title><rect x="638.4" y="421" width="4.6" height="15.0" fill="rgb(225,171,29)" rx="2" ry="2" />
+<text  x="641.43" y="431.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="1187.0" y="69" width="1.5" height="15.0" fill="rgb(225,149,54)" rx="2" ry="2" />
+<text  x="1189.99" y="79.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="639.9" y="309" width="3.1" height="15.0" fill="rgb(227,81,40)" rx="2" ry="2" />
+<text  x="642.94" y="319.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (4 samples, 0.51%)</title><rect x="1179.5" y="197" width="6.0" height="15.0" fill="rgb(250,222,48)" rx="2" ry="2" />
+<text  x="1182.45" y="207.5" ></text>
+</g>
+<g >
+<title>[[sunrpc]] (1 samples, 0.13%)</title><rect x="1187.0" y="101" width="1.5" height="15.0" fill="rgb(210,173,28)" rx="2" ry="2" />
+<text  x="1189.99" y="111.5" ></text>
+</g>
+<g >
+<title>[[nfs]] (1 samples, 0.13%)</title><rect x="1187.0" y="213" width="1.5" height="15.0" fill="rgb(244,21,36)" rx="2" ry="2" />
+<text  x="1189.99" y="223.5" ></text>
+</g>
+<g >
+<title>pbs_mom (1 samples, 0.13%)</title><rect x="1176.4" y="437" width="1.5" height="15.0" fill="rgb(235,227,11)" rx="2" ry="2" />
+<text  x="1179.44" y="447.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (3 samples, 0.38%)</title><rect x="638.4" y="389" width="4.6" height="15.0" fill="rgb(223,162,43)" rx="2" ry="2" />
+<text  x="641.43" y="399.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (5 samples, 0.64%)</title><rect x="1177.9" y="229" width="7.6" height="15.0" fill="rgb(217,117,7)" rx="2" ry="2" />
+<text  x="1180.94" y="239.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="117" width="1.5" height="15.0" fill="rgb(240,53,48)" rx="2" ry="2" />
+<text  x="16.01" y="127.5" ></text>
+</g>
+<g >
+<title>events/17 (1 samples, 0.13%)</title><rect x="10.0" y="437" width="1.5" height="15.0" fill="rgb(245,3,42)" rx="2" ry="2" />
+<text  x="13.00" y="447.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="405" width="1.5" height="15.0" fill="rgb(216,148,53)" rx="2" ry="2" />
+<text  x="16.01" y="415.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (3 samples, 0.38%)</title><rect x="638.4" y="341" width="4.6" height="15.0" fill="rgb(223,152,30)" rx="2" ry="2" />
+<text  x="641.43" y="351.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="661.0" y="341" width="1.5" height="15.0" fill="rgb(254,191,44)" rx="2" ry="2" />
+<text  x="664.03" y="351.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (3 samples, 0.38%)</title><rect x="638.4" y="357" width="4.6" height="15.0" fill="rgb(225,188,18)" rx="2" ry="2" />
+<text  x="641.43" y="367.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="389" width="1.5" height="15.0" fill="rgb(210,14,28)" rx="2" ry="2" />
+<text  x="16.01" y="399.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="641.4" y="277" width="1.6" height="15.0" fill="rgb(233,37,45)" rx="2" ry="2" />
+<text  x="644.44" y="287.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (261 samples, 33.33%)</title><rect x="245.1" y="357" width="393.3" height="15.0" fill="rgb(210,149,13)" rx="2" ry="2" />
+<text  x="248.10" y="367.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="1187.0" y="85" width="1.5" height="15.0" fill="rgb(248,185,37)" rx="2" ry="2" />
+<text  x="1189.99" y="95.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="10.0" y="405" width="1.5" height="15.0" fill="rgb(215,175,23)" rx="2" ry="2" />
+<text  x="13.00" y="415.5" ></text>
+</g>
+<g >
+<title>naive2 (341 samples, 43.55%)</title><rect x="662.5" y="437" width="513.9" height="15.0" fill="rgb(237,18,41)" rx="2" ry="2" />
+<text  x="665.54" y="447.5" >naive2</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (382 samples, 48.79%)</title><rect x="62.7" y="373" width="575.7" height="15.0" fill="rgb(246,226,7)" rx="2" ry="2" />
+<text  x="65.75" y="383.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="11.5" y="421" width="1.5" height="15.0" fill="rgb(209,28,21)" rx="2" ry="2" />
+<text  x="14.51" y="431.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="636.9" y="197" width="1.5" height="15.0" fill="rgb(248,157,40)" rx="2" ry="2" />
+<text  x="639.92" y="207.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="609.8" y="133" width="3.0" height="15.0" fill="rgb(233,25,31)" rx="2" ry="2" />
+<text  x="612.80" y="143.5" ></text>
+</g>
+<g >
+<title>[knem.ko] (1 samples, 0.13%)</title><rect x="1176.4" y="405" width="1.5" height="15.0" fill="rgb(246,76,34)" rx="2" ry="2" />
+<text  x="1179.44" y="415.5" ></text>
+</g>
+<g >
+<title>[unknown] (23 samples, 2.94%)</title><rect x="16.0" y="421" width="34.7" height="15.0" fill="rgb(210,19,27)" rx="2" ry="2" />
+<text  x="19.03" y="431.5" >[u..</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (5 samples, 0.64%)</title><rect x="1177.9" y="341" width="7.6" height="15.0" fill="rgb(238,68,47)" rx="2" ry="2" />
+<text  x="1180.94" y="351.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="11.5" y="389" width="1.5" height="15.0" fill="rgb(254,7,15)" rx="2" ry="2" />
+<text  x="14.51" y="399.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1173.4" y="389" width="3.0" height="15.0" fill="rgb(207,24,22)" rx="2" ry="2" />
+<text  x="1176.42" y="399.5" ></text>
+</g>
+<g >
+<title>perf (7 samples, 0.89%)</title><rect x="1177.9" y="437" width="10.6" height="15.0" fill="rgb(249,103,7)" rx="2" ry="2" />
+<text  x="1180.94" y="447.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="373" width="1.5" height="15.0" fill="rgb(227,115,4)" rx="2" ry="2" />
+<text  x="16.01" y="383.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="261" width="1.5" height="15.0" fill="rgb(227,189,40)" rx="2" ry="2" />
+<text  x="16.01" y="271.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (109 samples, 13.92%)</title><rect x="448.5" y="229" width="164.3" height="15.0" fill="rgb(249,151,13)" rx="2" ry="2" />
+<text  x="451.54" y="239.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="101" width="1.5" height="15.0" fill="rgb(228,39,1)" rx="2" ry="2" />
+<text  x="16.01" y="111.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (4 samples, 0.51%)</title><rect x="1179.5" y="149" width="6.0" height="15.0" fill="rgb(223,78,43)" rx="2" ry="2" />
+<text  x="1182.45" y="159.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="661.0" y="325" width="1.5" height="15.0" fill="rgb(243,140,47)" rx="2" ry="2" />
+<text  x="664.03" y="335.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="1187.0" y="37" width="1.5" height="15.0" fill="rgb(239,3,40)" rx="2" ry="2" />
+<text  x="1189.99" y="47.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="1187.0" y="229" width="1.5" height="15.0" fill="rgb(245,116,54)" rx="2" ry="2" />
+<text  x="1189.99" y="239.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (234 samples, 29.89%)</title><rect x="285.8" y="325" width="352.6" height="15.0" fill="rgb(207,69,34)" rx="2" ry="2" />
+<text  x="288.79" y="335.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (4 samples, 0.51%)</title><rect x="1179.5" y="133" width="6.0" height="15.0" fill="rgb(206,76,2)" rx="2" ry="2" />
+<text  x="1182.45" y="143.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (98 samples, 12.52%)</title><rect x="465.1" y="197" width="147.7" height="15.0" fill="rgb(232,101,40)" rx="2" ry="2" />
+<text  x="468.12" y="207.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (12 samples, 1.53%)</title><rect x="643.0" y="421" width="18.0" height="15.0" fill="rgb(222,186,46)" rx="2" ry="2" />
+<text  x="645.95" y="431.5" ></text>
+</g>
+<g >
+<title>fma (1 samples, 0.13%)</title><rect x="14.5" y="437" width="1.5" height="15.0" fill="rgb(233,153,49)" rx="2" ry="2" />
+<text  x="17.52" y="447.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1173.4" y="341" width="3.0" height="15.0" fill="rgb(246,111,36)" rx="2" ry="2" />
+<text  x="1176.42" y="351.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (5 samples, 0.64%)</title><rect x="1177.9" y="213" width="7.6" height="15.0" fill="rgb(213,166,40)" rx="2" ry="2" />
+<text  x="1180.94" y="223.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (20 samples, 2.55%)</title><rect x="20.5" y="357" width="30.2" height="15.0" fill="rgb(252,127,51)" rx="2" ry="2" />
+<text  x="23.55" y="367.5" >[[..</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="149" width="1.5" height="15.0" fill="rgb(217,63,35)" rx="2" ry="2" />
+<text  x="16.01" y="159.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (3 samples, 0.38%)</title><rect x="638.4" y="373" width="4.6" height="15.0" fill="rgb(225,7,35)" rx="2" ry="2" />
+<text  x="641.43" y="383.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (390 samples, 49.81%)</title><rect x="50.7" y="421" width="587.7" height="15.0" fill="rgb(212,191,18)" rx="2" ry="2" />
+<text  x="53.69" y="431.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>events/3 (1 samples, 0.13%)</title><rect x="11.5" y="437" width="1.5" height="15.0" fill="rgb(243,156,53)" rx="2" ry="2" />
+<text  x="14.51" y="447.5" ></text>
+</g>
+<g >
+<title>gmond (23 samples, 2.94%)</title><rect x="16.0" y="437" width="34.7" height="15.0" fill="rgb(249,61,52)" rx="2" ry="2" />
+<text  x="19.03" y="447.5" >gm..</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="181" width="1.5" height="15.0" fill="rgb(205,168,10)" rx="2" ry="2" />
+<text  x="16.01" y="191.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="661.0" y="405" width="1.5" height="15.0" fill="rgb(243,18,9)" rx="2" ry="2" />
+<text  x="664.03" y="415.5" ></text>
+</g>
+<g >
+<title>[libc-2.12.so] (7 samples, 0.89%)</title><rect x="1177.9" y="421" width="10.6" height="15.0" fill="rgb(251,22,16)" rx="2" ry="2" />
+<text  x="1180.94" y="431.5" ></text>
+</g>
+<g >
+<title>[[nfs]] (1 samples, 0.13%)</title><rect x="1187.0" y="197" width="1.5" height="15.0" fill="rgb(229,125,21)" rx="2" ry="2" />
+<text  x="1189.99" y="207.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="165" width="1.5" height="15.0" fill="rgb(230,165,14)" rx="2" ry="2" />
+<text  x="16.01" y="175.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (3 samples, 0.38%)</title><rect x="638.4" y="325" width="4.6" height="15.0" fill="rgb(221,104,9)" rx="2" ry="2" />
+<text  x="641.43" y="335.5" ></text>
+</g>
+<g >
+<title>[[sunrpc]] (1 samples, 0.13%)</title><rect x="1187.0" y="149" width="1.5" height="15.0" fill="rgb(214,72,42)" rx="2" ry="2" />
+<text  x="1189.99" y="159.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (384 samples, 49.04%)</title><rect x="59.7" y="389" width="578.7" height="15.0" fill="rgb(213,116,32)" rx="2" ry="2" />
+<text  x="62.73" y="399.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="325" width="1.5" height="15.0" fill="rgb(242,54,32)" rx="2" ry="2" />
+<text  x="16.01" y="335.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (387 samples, 49.43%)</title><rect x="55.2" y="405" width="583.2" height="15.0" fill="rgb(244,43,52)" rx="2" ry="2" />
+<text  x="58.21" y="415.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (186 samples, 23.75%)</title><rect x="358.1" y="277" width="280.3" height="15.0" fill="rgb(213,120,16)" rx="2" ry="2" />
+<text  x="361.12" y="287.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="245" width="1.5" height="15.0" fill="rgb(230,198,8)" rx="2" ry="2" />
+<text  x="16.01" y="255.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (5 samples, 0.64%)</title><rect x="43.2" y="245" width="7.5" height="15.0" fill="rgb(254,55,33)" rx="2" ry="2" />
+<text  x="46.15" y="255.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (4 samples, 0.51%)</title><rect x="1179.5" y="165" width="6.0" height="15.0" fill="rgb(216,34,9)" rx="2" ry="2" />
+<text  x="1182.45" y="175.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1173.4" y="325" width="3.0" height="15.0" fill="rgb(233,225,24)" rx="2" ry="2" />
+<text  x="1176.42" y="335.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (15 samples, 1.92%)</title><rect x="28.1" y="293" width="22.6" height="15.0" fill="rgb(230,203,46)" rx="2" ry="2" />
+<text  x="31.08" y="303.5" >[..</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="10.0" y="421" width="1.5" height="15.0" fill="rgb(205,12,40)" rx="2" ry="2" />
+<text  x="13.00" y="431.5" ></text>
+</g>
+<g >
+<title>[ipmi_si.ko] (11 samples, 1.40%)</title><rect x="644.5" y="341" width="16.5" height="15.0" fill="rgb(225,69,14)" rx="2" ry="2" />
+<text  x="647.46" y="351.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (5 samples, 0.64%)</title><rect x="1177.9" y="309" width="7.6" height="15.0" fill="rgb(242,228,51)" rx="2" ry="2" />
+<text  x="1180.94" y="319.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1185.5" y="277" width="3.0" height="15.0" fill="rgb(234,38,44)" rx="2" ry="2" />
+<text  x="1188.48" y="287.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (5 samples, 0.64%)</title><rect x="1177.9" y="293" width="7.6" height="15.0" fill="rgb(207,176,23)" rx="2" ry="2" />
+<text  x="1180.94" y="303.5" ></text>
+</g>
+<g >
+<title>all (783 samples, 100%)</title><rect x="10.0" y="453" width="1180.0" height="15.0" fill="rgb(250,224,32)" rx="2" ry="2" />
+<text  x="13.00" y="463.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="229" width="1.5" height="15.0" fill="rgb(250,187,41)" rx="2" ry="2" />
+<text  x="16.01" y="239.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="11.5" y="405" width="1.5" height="15.0" fill="rgb(207,100,42)" rx="2" ry="2" />
+<text  x="14.51" y="415.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1185.5" y="309" width="3.0" height="15.0" fill="rgb(253,13,36)" rx="2" ry="2" />
+<text  x="1188.48" y="319.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="277" width="1.5" height="15.0" fill="rgb(236,187,30)" rx="2" ry="2" />
+<text  x="16.01" y="287.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1173.4" y="405" width="3.0" height="15.0" fill="rgb(247,48,46)" rx="2" ry="2" />
+<text  x="1176.42" y="415.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="10.0" y="373" width="1.5" height="15.0" fill="rgb(238,114,4)" rx="2" ry="2" />
+<text  x="13.00" y="383.5" ></text>
+</g>
+<g >
+<title>[libc-2.12.so] (2 samples, 0.26%)</title><rect x="1185.5" y="341" width="3.0" height="15.0" fill="rgb(229,103,16)" rx="2" ry="2" />
+<text  x="1188.48" y="351.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (5 samples, 0.64%)</title><rect x="1177.9" y="261" width="7.6" height="15.0" fill="rgb(210,159,34)" rx="2" ry="2" />
+<text  x="1180.94" y="271.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="661.0" y="389" width="1.5" height="15.0" fill="rgb(254,111,32)" rx="2" ry="2" />
+<text  x="664.03" y="399.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (3 samples, 0.38%)</title><rect x="608.3" y="181" width="4.5" height="15.0" fill="rgb(205,122,35)" rx="2" ry="2" />
+<text  x="611.29" y="191.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (215 samples, 27.46%)</title><rect x="314.4" y="309" width="324.0" height="15.0" fill="rgb(245,107,11)" rx="2" ry="2" />
+<text  x="317.42" y="319.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[sunrpc]] (1 samples, 0.13%)</title><rect x="1187.0" y="117" width="1.5" height="15.0" fill="rgb(230,114,38)" rx="2" ry="2" />
+<text  x="1189.99" y="127.5" ></text>
+</g>
+<g >
+<title>[[mx_driver]] (17 samples, 2.17%)</title><rect x="612.8" y="261" width="25.6" height="15.0" fill="rgb(250,79,2)" rx="2" ry="2" />
+<text  x="615.81" y="271.5" >[..</text>
+</g>
+<g >
+<title>[perf] (7 samples, 0.89%)</title><rect x="1177.9" y="389" width="10.6" height="15.0" fill="rgb(206,187,33)" rx="2" ry="2" />
+<text  x="1180.94" y="399.5" ></text>
+</g>
+<g >
+<title>[perf] (7 samples, 0.89%)</title><rect x="1177.9" y="373" width="10.6" height="15.0" fill="rgb(238,3,18)" rx="2" ry="2" />
+<text  x="1180.94" y="383.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (102 samples, 13.03%)</title><rect x="459.1" y="213" width="153.7" height="15.0" fill="rgb(208,207,15)" rx="2" ry="2" />
+<text  x="462.09" y="223.5" >[[kernel.kallsyms]]</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1185.5" y="293" width="3.0" height="15.0" fill="rgb(233,26,50)" rx="2" ry="2" />
+<text  x="1188.48" y="303.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="1174.9" y="277" width="1.5" height="15.0" fill="rgb(218,81,48)" rx="2" ry="2" />
+<text  x="1177.93" y="287.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (19 samples, 2.43%)</title><rect x="22.1" y="341" width="28.6" height="15.0" fill="rgb(205,182,19)" rx="2" ry="2" />
+<text  x="25.06" y="351.5" >[[..</text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="293" width="1.5" height="15.0" fill="rgb(246,229,51)" rx="2" ry="2" />
+<text  x="16.01" y="303.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="1187.0" y="261" width="1.5" height="15.0" fill="rgb(229,6,22)" rx="2" ry="2" />
+<text  x="1189.99" y="271.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (4 samples, 0.51%)</title><rect x="1179.5" y="117" width="6.0" height="15.0" fill="rgb(227,75,28)" rx="2" ry="2" />
+<text  x="1182.45" y="127.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="639.9" y="293" width="3.1" height="15.0" fill="rgb(240,151,16)" rx="2" ry="2" />
+<text  x="642.94" y="303.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.13%)</title><rect x="1188.5" y="421" width="1.5" height="15.0" fill="rgb(215,186,37)" rx="2" ry="2" />
+<text  x="1191.49" y="431.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="13.0" y="213" width="1.5" height="15.0" fill="rgb(240,159,45)" rx="2" ry="2" />
+<text  x="16.01" y="223.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1173.4" y="293" width="3.0" height="15.0" fill="rgb(208,105,26)" rx="2" ry="2" />
+<text  x="1176.42" y="303.5" ></text>
+</g>
+<g >
+<title>[unknown] (1 samples, 0.13%)</title><rect x="1176.4" y="421" width="1.5" height="15.0" fill="rgb(222,118,53)" rx="2" ry="2" />
+<text  x="1179.44" y="431.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (2 samples, 0.26%)</title><rect x="1185.5" y="325" width="3.0" height="15.0" fill="rgb(226,18,12)" rx="2" ry="2" />
+<text  x="1188.48" y="335.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (3 samples, 0.38%)</title><rect x="638.4" y="405" width="4.6" height="15.0" fill="rgb(213,220,54)" rx="2" ry="2" />
+<text  x="641.43" y="415.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="661.0" y="421" width="1.5" height="15.0" fill="rgb(254,122,40)" rx="2" ry="2" />
+<text  x="664.03" y="431.5" ></text>
+</g>
+<g >
+<title>[libc-2.12.so] (3 samples, 0.38%)</title><rect x="662.5" y="421" width="4.6" height="15.0" fill="rgb(243,180,43)" rx="2" ry="2" />
+<text  x="665.54" y="431.5" ></text>
+</g>
+<g >
+<title>ksoftirqd/14 (1 samples, 0.13%)</title><rect x="661.0" y="437" width="1.5" height="15.0" fill="rgb(223,71,23)" rx="2" ry="2" />
+<text  x="664.03" y="447.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (6 samples, 0.77%)</title><rect x="41.6" y="261" width="9.1" height="15.0" fill="rgb(222,120,27)" rx="2" ry="2" />
+<text  x="44.65" y="271.5" ></text>
+</g>
+<g >
+<title>[[kernel.kallsyms]] (1 samples, 0.13%)</title><rect x="1187.0" y="245" width="1.5" height="15.0" fill="rgb(206,186,3)" rx="2" ry="2" />
+<text  x="1189.99" y="255.5" ></text>
+</g>
+</g>
+</svg>
