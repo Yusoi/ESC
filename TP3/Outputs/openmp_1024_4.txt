@@ -1,0 +1,25 @@
+Tracer is ready!
+Opened the matrix file: /dev/dtrace/helper
+Opened the matrix file: result.txt
+Program stopped calculating
+Press ENTER to start the program: Time running: 3.628665
+Opened the matrix file: /dev/dtrace/helper
+---------------------- Final Report ----------------------
+Generated Matrices with size:            1024x1024
+Time spent generating matrices:          25847052
+Time spent running the main algorithm:   3628511571
+Iteration time:
+    Average:                             2605295
+    Maximum:                             111157740
+Calculation time:
+    Average:                             1802231
+    Maximum:                             109995746
+Copying time:
+    Average:                             803063
+    Maximum:                             38741696
+Total number of threads locked:          18
+Time spent sleeping by thread 1         2115218981
+Time spent sleeping by thread 3         2181612902
+Time spent sleeping by thread 2         2284874073
+Time spent sleeping by thread 4         2322364484
+

@@ -8,9 +8,10 @@
 #define N_MAX 1000
 #define MAT_SIZE 1024
 #define M_SIZE MAT_SIZE + 2
-#define N_THREADS 8
+#define N_THREADS 4
 #define M_DIV MAT_SIZE / N_THREADS
 
+/*
 class Barrier{
     private:
         int counter = 0;
@@ -38,11 +39,44 @@ class Barrier{
             }
         }
 };
+*/
+
+class Barrier {
+public:
+    explicit Barrier(std::size_t iCount) : 
+      mThreshold(iCount), 
+      mCount(iCount), 
+      mGeneration(0) {
+    }
+
+    void Wait() {
+        std::unique_lock<std::mutex> lLock{mMutex};
+        auto lGen = mGeneration;
+        if (!--mCount) {
+            mGeneration++;
+            mCount = mThreshold;
+            mCond.notify_all();
+        } else {
+            mCond.wait(lLock, [this, lGen] { return lGen != mGeneration; });
+        }
+    }
+
+private:
+    std::mutex mMutex;
+    std::condition_variable mCond;
+    std::size_t mThreshold;
+    std::size_t mCount;
+    std::size_t mGeneration;
+};
 
 
 void heat_dispersion(int tnum, int** G1, int** G2, Barrier *br){
     for (int it = 0; it < N_MAX; it++)
     {
+        if(tnum == 0)
+            if(HEATTIMER_QUERY_START_ITERATION_ENABLED())
+                HEATTIMER_QUERY_START_ITERATION();
+
         for (int i = (tnum * M_DIV) + 1; i < ((tnum + 1) * M_DIV) + 1; i++)
         {
             for (int j = 1; j < M_SIZE - 1; j++)
@@ -51,8 +85,11 @@ void heat_dispersion(int tnum, int** G1, int** G2, Barrier *br){
             }
         }
 
-        printf("Entering Barrier %d ------------- \n",tnum);
-        br->barrier();
+        br->Wait();
+
+        if(tnum == 0)
+            if(HEATTIMER_QUERY_START_COPY_ENABLED())
+                    HEATTIMER_QUERY_START_COPY();
 
         for (int i = (tnum * M_DIV) + 1; i < ((tnum + 1) * M_DIV) + 1; i++)
         {
@@ -62,8 +99,11 @@ void heat_dispersion(int tnum, int** G1, int** G2, Barrier *br){
             }
         }
 
-        printf("Entering Barrier %d ------------- \n",tnum);
-        br->barrier();
+        br->Wait();
+
+        if(tnum == 0)
+            if(HEATTIMER_QUERY_END_ITERATION_ENABLED())
+                    HEATTIMER_QUERY_END_ITERATION(it);
     }
 }
 
@@ -74,6 +114,9 @@ int main()
     scanf("*");
 
     FILE *file = fopen("result.txt", "w+");
+
+    if(HEATTIMER_QUERY_MATRIX_GENERATION_ENABLED())
+        HEATTIMER_QUERY_MATRIX_GENERATION(MAT_SIZE);
 
     int **G1, **G2;
 
@@ -105,7 +148,10 @@ int main()
 
     //------------------------------------------------------------------------------------------
     //Iterações sobre a difusão de calor
-    Barrier br;
+    Barrier br(N_THREADS);
+
+    if(HEATTIMER_QUERY_START_CALC_ENABLED())
+        HEATTIMER_QUERY_START_CALC();
 
     for(int i = 0; i < N_THREADS; i++) 
     {
@@ -116,6 +162,9 @@ int main()
     {
         threads[i].join();
     }
+
+    if(HEATTIMER_QUERY_END_CALC_ENABLED())
+        HEATTIMER_QUERY_END_CALC();
 
     //Prints results to a file
     for (int i = 0; i < M_SIZE; i++)

@@ -1,0 +1,30 @@
+Tracer is ready!
+Opened the matrix file: /dev/dtrace/helper
+Opened the matrix file: result.txt
+Press ENTER to start the program: Opened the matrix file: /usr/lib/locale/en_US.UTF-8/LC_MESSAGES/solaris_linkers.mo
+Opened the matrix file: /dev/dtrace/helper
+Program stopped calculating
+---------------------- Final Report ----------------------
+Generated Matrices with size:            1024x1024
+Time spent generating matrices:          34491684
+Time spent running the main algorithm:   2541628137
+Iteration time:
+    Average:                             2520711
+    Maximum:                             152327165
+Calculation time:
+    Average:                             1192145
+    Maximum:                             80788941
+Copying time:
+    Average:                             1328566
+    Maximum:                             151038845
+Total number of threads locked:          13
+Time spent sleeping by thread 1         246946368
+Time spent sleeping by thread 3         1468760810
+Time spent sleeping by thread 8         1549090749
+Time spent sleeping by thread 7         1610508844
+Time spent sleeping by thread 4         1616914297
+Time spent sleeping by thread 5         1643953608
+Time spent sleeping by thread 6         1665085987
+Time spent sleeping by thread 2         1768867876
+Time spent sleeping by thread 9         1776747141
+

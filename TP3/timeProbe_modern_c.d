@@ -1,14 +1,13 @@
 #!/usr/sbin/dtrace -qs
 
-int m_size;
-int m_gen_time;
-int alg_time;
+uint64_t m_size;
+uint64_t m_gen_time;
+uint64_t alg_time;
+uint64_t sleep_time[id_t];
 
 self int iteration_start;
 self int copy_start;
 self string write_path;
-self int sleep_time;
-self int asleep;
 
 this int it_time;
 this int copy_time;
@@ -21,30 +20,30 @@ dtrace:::BEGIN
 
 heattimer*:::query-matrix_generation
 {
-    m_gen_time = walltimestamp; 
+    m_gen_time = timestamp; 
     m_size = arg0;
 }
 
 heattimer*:::query-start_calc
 {
-    m_gen_time = walltimestamp - m_gen_time;
-    alg_time = walltimestamp;
+    m_gen_time = timestamp - m_gen_time;
+    alg_time = timestamp;
 }
 
 heattimer*:::query-start_iteration
 {
-    self->iteration_start = walltimestamp;
+    self->iteration_start = timestamp;
 }
 
 heattimer*:::query-start_copy
 {
-    self->copy_start = walltimestamp;
+    self->copy_start = timestamp;
 }
 
 heattimer*:::query-end_iteration
 {
-    this->it_time = walltimestamp - self->iteration_start;
-    this->copy_time = walltimestamp - self->copy_start;
+    this->it_time = timestamp - self->iteration_start;
+    this->copy_time = timestamp - self->copy_start;
     this->calc_time = this->it_time - this->copy_time;
     /*printf("Iteration %d finished on PROCESS: %d, THREAD: %d\n\tTime spent on calculations: %d\n\tTime spent on copies: %d\n\tTime spent on the whole iteration: %d\n",
            arg0,
@@ -64,76 +63,75 @@ heattimer*:::query-end_iteration
 
 heattimer*:::query-end_calc
 {
-    printf("Program stopped running at this time\n");
-    alg_time = walltimestamp - alg_time;
+    printf("Program stopped calculating\n");
+    alg_time = timestamp - alg_time;
 }
 
 syscall::open*:entry
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
+/execname == "modern_c"/
 {
     self->open_path = copyinstr(arg1);
     printf("Opened the matrix file: %s\n",self->open_path);
 }
 
 syscall::pwrite*:entry
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
+/execname == "modern_c"/
 {
     self->write_path = copyinstr(arg1);
     printf("Started writing in file: %s\n",self->write_path);
 }
 
 syscall::pwrite*:return
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
+/execname == "modern_c"/
 {
     printf("Finished writing in file: %s\n",self->write_path);
 }
 
 sched:::on-cpu
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
+/execname == "modern_c"/
 {
     /*printf("Thread %d started running\n",tid);*/
 }
 
 sched:::off-cpu
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
+/execname == "modern_c"/
 {
     /*printf("Thread %d stopped running\n",tid);*/
 }
 
 sched:::sleep
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
+/execname == "modern_c"/
 {
-    self->sleep_time = walltimestamp;
-    self->asleep = 1;
+    sleep_time[tid] = timestamp;
 }
 
 sched:::wakeup
-/(execname == "seq" || execname == "openmp" || execname == "mpi") && self->asleep == 1/
+/execname == "modern_c" && sleep_time[tid] != 0/
 {
-    @sleep[tid] = sum(walltimestamp - self->sleep_time);
-    self->asleep = 0;
+    @sleep[tid] = sum(timestamp - sleep_time[tid]);
+    sleep_time[tid] = 0;
 }
 
 lockstat:::adaptive-block
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
+/execname == "modern_c"/
 {
     @blocks = count();
 }
 
 proc:::exec
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
+/execname == "modern_c"/
 {
     printf("Process %d started executing\n",pid);
 }
 
 proc:::exec-failure
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
+/execname == "modern_c"/
 {
     printf("Process %d exectued unsuccessfully\n",pid);
 }
 
 proc:::exec-success
-/execname == "seq" || execname == "openmp" || execname == "mpi"/
+/execname == "modern_c"/
 {
     printf("Process %d executed correctly\n",pid);
 }

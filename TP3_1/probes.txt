@@ -1,5 +1,0 @@
-   ID   PROVIDER            MODULE                          FUNCTION NAME
-12393 heattimer5368               seq                              main query-end_iteration
-12394 heattimer5368               seq                              main query-matrix_generation
-12395 heattimer5368               seq                              main query-start_copy
-12396 heattimer5368               seq                              main query-start_iteration
