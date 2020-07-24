@@ -107,11 +107,13 @@ int main()
     //Iterações sobre a difusão de calor
     Barrier br;
 
-    for(int i = 0; i < N_THREADS; i++){
+    for(int i = 0; i < N_THREADS; i++) 
+    {
         threads[i] = std::thread(heat_dispersion,i,G1,G2,&br);
     }
     
-    for(int i = 0; i < N_THREADS; i++){
+    for(int i = 0; i < N_THREADS; i++) 
+    {
         threads[i].join();
     }
 
